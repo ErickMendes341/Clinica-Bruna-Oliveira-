@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 interface Product {
   id: string;
   nome: string;
+  categoria: string;
   lote?: string;
   quantidade: number;
   quantidade_minima: number;
@@ -22,12 +23,24 @@ interface Movimentacao {
   created_at: string;
 }
 
+const CATEGORIAS = [
+  { id: 'todos', label: 'Todos os Itens' },
+  { id: 'medicacao', label: 'Medicação' },
+  { id: 'insumos', label: 'Insumos' },
+  { id: 'descartaveis', label: 'Descartáveis' },
+];
+
 export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [historico, setHistorico] = useState<Movimentacao[]>([]);
   
+  // Filtros de busca e abas
+  const [activeTab, setActiveTab] = useState('todos');
+  const [searchTerm, setSearchTerm] = useState('');
+
   // Campos do formulário de cadastro
   const [nome, setNome] = useState('');
+  const [categoria, setCategoria] = useState('medicacao');
   const [lote, setLote] = useState('');
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('');
@@ -74,6 +87,7 @@ export default function Dashboard() {
     const { data, error } = await supabase.from('produtos').insert([
       {
         nome,
+        categoria,
         lote: lote || null,
         quantidade: parseInt(quantidade),
         quantidade_minima: 10,
@@ -91,6 +105,7 @@ export default function Dashboard() {
       }
       
       setNome('');
+      setCategoria('medicacao');
       setLote('');
       setQuantidade('');
       setPreco('');
@@ -167,7 +182,6 @@ export default function Dashboard() {
     }
   }
 
-  // EXCLUIR PRODUTO
   async function handleDeleteProduct(id: string, nome: string) {
     if (!confirm(`Tem certeza que deseja excluir o item "${nome}"?`)) return;
 
@@ -181,7 +195,6 @@ export default function Dashboard() {
     }
   }
 
-  // SALVAR EDIÇÃO DO PRODUTO
   async function handleSaveEdit(e: React.FormEvent) {
     e.preventDefault();
     if (!editingProduct) return;
@@ -190,6 +203,7 @@ export default function Dashboard() {
       .from('produtos')
       .update({
         nome: editingProduct.nome,
+        categoria: editingProduct.categoria,
         lote: editingProduct.lote || null,
         quantidade: Number(editingProduct.quantidade),
         preco_custo: Number(editingProduct.preco_custo),
@@ -205,6 +219,15 @@ export default function Dashboard() {
       fetchData();
     }
   }
+
+  // FILTRAGEM DOS PRODUTOS
+  const filteredProducts = products.filter((product) => {
+    const matchesTab = activeTab === 'todos' || (product.categoria || 'insumos') === activeTab;
+    const matchesSearch = 
+      product.nome.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (product.lote && product.lote.toLowerCase().includes(searchTerm.toLowerCase()));
+    return matchesTab && matchesSearch;
+  });
 
   const totalItens = products.length;
   const estoqueBaixoCount = products.filter(p => p.quantidade <= (p.quantidade_minima || 10)).length;
@@ -236,7 +259,7 @@ export default function Dashboard() {
         {/* CARDS DE RESUMO */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
-            <p className="text-sm font-medium text-slate-500">Total de Insumos</p>
+            <p className="text-sm font-medium text-slate-500">Total de Cadastros</p>
             <p className="text-2xl font-bold text-slate-800 mt-1">{totalItens}</p>
           </div>
 
@@ -264,17 +287,31 @@ export default function Dashboard() {
 
         {/* FORMULÁRIO DE CADASTRO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Insumo</h2>
-          <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            <div>
+          <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Item</h2>
+          <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+            
+            <div className="lg:col-span-2">
               <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Item</label>
               <input
                 type="text"
-                placeholder="Ex: Anestésico..."
+                placeholder="Ex: Paracetamol, Agulha, Seringa..."
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
+              <select
+                value={categoria}
+                onChange={(e) => setCategoria(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none bg-white"
+              >
+                <option value="medicacao">Medicação</option>
+                <option value="insumos">Insumos</option>
+                <option value="descartaveis">Descartáveis</option>
+              </select>
             </div>
 
             <div>
@@ -321,25 +358,59 @@ export default function Dashboard() {
               />
             </div>
 
-            <div className="flex items-end">
+            <div className="lg:col-span-7 flex justify-end mt-2">
               <button
                 type="submit"
-                className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-4 rounded-lg transition-colors"
+                className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2.5 px-6 rounded-lg transition-colors"
               >
-                Salvar Insumo
+                Salvar Cadastro
               </button>
             </div>
           </form>
         </div>
 
-        {/* TABELA DE ESTOQUE */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-          <h2 className="text-xl font-semibold text-slate-800 mb-4">Itens em Estoque</h2>
+        {/* TABELA DE ESTOQUE COM ABAS E PESQUISA */}
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
+          
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+            
+            {/* ABAS DE CATEGORIA */}
+            <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
+              {CATEGORIAS.map((cat) => (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveTab(cat.id)}
+                  className={`px-4 py-2 text-sm font-medium rounded-md transition-all ${
+                    activeTab === cat.id
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  {cat.label}
+                </button>
+              ))}
+            </div>
+
+            {/* CAMPO DE PESQUISA */}
+            <div className="relative w-full md:w-72">
+              <input
+                type="text"
+                placeholder="🔍 Pesquisar por nome ou lote..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full px-3 py-2 pl-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+          </div>
+
+          {/* TABELA DE ITENS */}
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-600 text-sm">
                   <th className="py-3 px-2">Nome</th>
+                  <th className="py-3 px-2">Categoria</th>
                   <th className="py-3 px-2">Lote</th>
                   <th className="py-3 px-2">Quantidade</th>
                   <th className="py-3 px-2">Preço Un.</th>
@@ -349,14 +420,14 @@ export default function Dashboard() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
-                {products.length === 0 ? (
+                {filteredProducts.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-4 text-center text-slate-400">
-                      Nenhum produto cadastrado.
+                    <td colSpan={8} className="py-6 text-center text-slate-400">
+                      Nenhum item encontrado.
                     </td>
                   </tr>
                 ) : (
-                  products.map((product) => {
+                  filteredProducts.map((product) => {
                     let statusValidade = 'text-slate-600';
                     let textoValidade = product.validade ? new Date(product.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Sem Data';
                     
@@ -371,9 +442,14 @@ export default function Dashboard() {
                       }
                     }
 
+                    const catLabel = 
+                      product.categoria === 'medicacao' ? '💊 Medicação' :
+                      product.categoria === 'descartaveis' ? '🗑️ Descartáveis' : '💉 Insumos';
+
                     return (
                       <tr key={product.id} className="hover:bg-slate-50">
                         <td className="py-3 px-2 font-medium">{product.nome}</td>
+                        <td className="py-3 px-2 text-xs font-semibold text-slate-600">{catLabel}</td>
                         <td className="py-3 px-2 text-sm text-slate-500 font-mono">{product.lote || '-'}</td>
                         <td className="py-3 px-2 font-semibold">{product.quantidade} un.</td>
                         <td className="py-3 px-2">
@@ -414,7 +490,7 @@ export default function Dashboard() {
                               title="Editar Item"
                               className="bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
                             >
-                              ✏️ Editar
+                              ✏️
                             </button>
                             <button
                               onClick={() => handleDeleteProduct(product.id, product.nome)}
@@ -438,7 +514,7 @@ export default function Dashboard() {
         {editingProduct && (
           <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
             <div className="bg-white rounded-xl max-w-lg w-full p-6 space-y-4 shadow-xl">
-              <h3 className="text-xl font-bold text-slate-800">Editar Insumo</h3>
+              <h3 className="text-xl font-bold text-slate-800">Editar Item</h3>
               
               <form onSubmit={handleSaveEdit} className="space-y-3">
                 <div>
@@ -450,6 +526,19 @@ export default function Dashboard() {
                     className="w-full px-3 py-2 border rounded-lg text-sm"
                     required
                   />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Categoria</label>
+                  <select
+                    value={editingProduct.categoria || 'insumos'}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, categoria: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                  >
+                    <option value="medicacao">Medicação</option>
+                    <option value="insumos">Insumos</option>
+                    <option value="descartaveis">Descartáveis</option>
+                  </select>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
