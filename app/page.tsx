@@ -7,6 +7,7 @@ import { supabase } from '@/lib/supabase';
 interface Product {
   id: string;
   nome: string;
+  lote?: string;
   quantidade: number;
   quantidade_minima: number;
   preco_custo: number;
@@ -27,6 +28,7 @@ export default function Dashboard() {
   
   // Campos do formulário
   const [nome, setNome] = useState('');
+  const [lote, setLote] = useState('');
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('');
   const [validade, setValidade] = useState('');
@@ -69,6 +71,7 @@ export default function Dashboard() {
     const { data, error } = await supabase.from('produtos').insert([
       {
         nome,
+        lote: lote || null,
         quantidade: parseInt(quantidade),
         quantidade_minima: 10,
         preco_custo: parseFloat(preco),
@@ -80,12 +83,12 @@ export default function Dashboard() {
       alert('Erro ao cadastrar produto!');
       console.error(error);
     } else {
-      // Registrar no histórico como ENTRADA
       if (data && data[0]) {
         await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
       }
       
       setNome('');
+      setLote('');
       setQuantidade('');
       setPreco('');
       setValidade('');
@@ -161,7 +164,6 @@ export default function Dashboard() {
     }
   }
 
-  // Cálculos dos Cards
   const totalItens = products.length;
   const estoqueBaixoCount = products.filter(p => p.quantidade <= (p.quantidade_minima || 10)).length;
   
@@ -221,7 +223,7 @@ export default function Dashboard() {
         {/* FORMULÁRIO DE CADASTRO */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Insumo</h2>
-          <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-5 gap-4">
+          <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Item</label>
               <input
@@ -229,6 +231,17 @@ export default function Dashboard() {
                 placeholder="Ex: Anestésico..."
                 value={nome}
                 onChange={(e) => setNome(e.target.value)}
+                className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Nº do Lote</label>
+              <input
+                type="text"
+                placeholder="Ex: L12345"
+                value={lote}
+                onChange={(e) => setLote(e.target.value)}
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
@@ -257,7 +270,7 @@ export default function Dashboard() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1">Data de Validade</label>
+              <label className="block text-sm font-medium text-slate-700 mb-1">Validade</label>
               <input
                 type="date"
                 value={validade}
@@ -285,23 +298,23 @@ export default function Dashboard() {
               <thead>
                 <tr className="border-b border-slate-200 text-slate-600 text-sm">
                   <th className="py-3 px-2">Nome</th>
+                  <th className="py-3 px-2">Lote</th>
                   <th className="py-3 px-2">Quantidade</th>
                   <th className="py-3 px-2">Preço Un.</th>
                   <th className="py-3 px-2">Validade</th>
-                  <th className="py-3 px-2">Status Estoque</th>
+                  <th className="py-3 px-2">Status</th>
                   <th className="py-3 px-2 text-center">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-slate-700">
                 {products.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-4 text-center text-slate-400">
+                    <td colSpan={7} className="py-4 text-center text-slate-400">
                       Nenhum produto cadastrado.
                     </td>
                   </tr>
                 ) : (
                   products.map((product) => {
-                    // Cálculo de status de validade
                     let statusValidade = 'text-slate-600';
                     let textoValidade = product.validade ? new Date(product.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Sem Data';
                     
@@ -319,6 +332,7 @@ export default function Dashboard() {
                     return (
                       <tr key={product.id} className="hover:bg-slate-50">
                         <td className="py-3 px-2 font-medium">{product.nome}</td>
+                        <td className="py-3 px-2 text-sm text-slate-500 font-mono">{product.lote || '-'}</td>
                         <td className="py-3 px-2 font-semibold">{product.quantidade} un.</td>
                         <td className="py-3 px-2">
                           R$ {Number(product.preco_custo || 0).toFixed(2)}
