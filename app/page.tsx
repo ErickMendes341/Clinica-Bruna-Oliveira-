@@ -26,12 +26,15 @@ export default function Dashboard() {
   const [products, setProducts] = useState<Product[]>([]);
   const [historico, setHistorico] = useState<Movimentacao[]>([]);
   
-  // Campos do formulário
+  // Campos do formulário de cadastro
   const [nome, setNome] = useState('');
   const [lote, setLote] = useState('');
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('');
   const [validade, setValidade] = useState('');
+
+  // Estado para Edição de Produto
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   
   const [mounted, setMounted] = useState(false);
 
@@ -160,6 +163,45 @@ export default function Dashboard() {
       console.error(error);
     } else {
       await registrarMovimentacao(product.id, product.nome, 'SAIDA', qtdSaida);
+      fetchData();
+    }
+  }
+
+  // EXCLUIR PRODUTO
+  async function handleDeleteProduct(id: string, nome: string) {
+    if (!confirm(`Tem certeza que deseja excluir o item "${nome}"?`)) return;
+
+    const { error } = await supabase.from('produtos').delete().eq('id', id);
+
+    if (error) {
+      alert('Erro ao excluir produto!');
+      console.error(error);
+    } else {
+      fetchData();
+    }
+  }
+
+  // SALVAR EDIÇÃO DO PRODUTO
+  async function handleSaveEdit(e: React.FormEvent) {
+    e.preventDefault();
+    if (!editingProduct) return;
+
+    const { error } = await supabase
+      .from('produtos')
+      .update({
+        nome: editingProduct.nome,
+        lote: editingProduct.lote || null,
+        quantidade: Number(editingProduct.quantidade),
+        preco_custo: Number(editingProduct.preco_custo),
+        validade: editingProduct.validade || null,
+      })
+      .eq('id', editingProduct.id);
+
+    if (error) {
+      alert('Erro ao atualizar produto!');
+      console.error(error);
+    } else {
+      setEditingProduct(null);
       fetchData();
     }
   }
@@ -351,19 +393,37 @@ export default function Dashboard() {
                             </span>
                           )}
                         </td>
-                        <td className="py-3 px-2 text-center space-x-2">
-                          <button
-                            onClick={() => handleEntrada(product)}
-                            className="bg-emerald-600 hover:bg-emerald-700 text-white px-2.5 py-1 rounded text-xs font-semibold transition-colors"
-                          >
-                            + Repor
-                          </button>
-                          <button
-                            onClick={() => handleBaixa(product)}
-                            className="bg-red-500 hover:bg-red-600 text-white px-2.5 py-1 rounded text-xs font-semibold transition-colors"
-                          >
-                            - Baixa
-                          </button>
+                        <td className="py-3 px-2 text-center">
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              onClick={() => handleEntrada(product)}
+                              title="Repor Estoque"
+                              className="bg-emerald-600 hover:bg-emerald-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                            >
+                              + Repor
+                            </button>
+                            <button
+                              onClick={() => handleBaixa(product)}
+                              title="Dar Baixa"
+                              className="bg-amber-600 hover:bg-amber-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                            >
+                              - Baixa
+                            </button>
+                            <button
+                              onClick={() => setEditingProduct({ ...product })}
+                              title="Editar Item"
+                              className="bg-slate-600 hover:bg-slate-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                            >
+                              ✏️ Editar
+                            </button>
+                            <button
+                              onClick={() => handleDeleteProduct(product.id, product.nome)}
+                              title="Excluir Item"
+                              className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs font-semibold transition-colors"
+                            >
+                              🗑️
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -373,6 +433,89 @@ export default function Dashboard() {
             </table>
           </div>
         </div>
+
+        {/* MODAL DE EDIÇÃO */}
+        {editingProduct && (
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
+            <div className="bg-white rounded-xl max-w-lg w-full p-6 space-y-4 shadow-xl">
+              <h3 className="text-xl font-bold text-slate-800">Editar Insumo</h3>
+              
+              <form onSubmit={handleSaveEdit} className="space-y-3">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">Nome</label>
+                  <input
+                    type="text"
+                    value={editingProduct.nome}
+                    onChange={(e) => setEditingProduct({ ...editingProduct, nome: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg text-sm"
+                    required
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nº do Lote</label>
+                    <input
+                      type="text"
+                      value={editingProduct.lote || ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, lote: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Quantidade</label>
+                    <input
+                      type="number"
+                      value={editingProduct.quantidade}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, quantidade: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      required
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Preço Custo (R$)</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={editingProduct.preco_custo}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, preco_custo: Number(e.target.value) })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                      required
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Validade</label>
+                    <input
+                      type="date"
+                      value={editingProduct.validade ? editingProduct.validade.split('T')[0] : ''}
+                      onChange={(e) => setEditingProduct({ ...editingProduct, validade: e.target.value })}
+                      className="w-full px-3 py-2 border rounded-lg text-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <button
+                    type="button"
+                    onClick={() => setEditingProduct(null)}
+                    className="px-4 py-2 border text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700"
+                  >
+                    Salvar Alterações
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        )}
 
         {/* HISTÓRICO DE MOVIMENTAÇÕES */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
