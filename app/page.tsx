@@ -1,6 +1,7 @@
 'use client';
-import './globals.css';
+export const dynamic = 'force-dynamic';
 
+import './globals.css';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 
