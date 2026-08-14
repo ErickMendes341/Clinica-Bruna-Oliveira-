@@ -1,5 +1,4 @@
 'use client';
-export const dynamic = 'force-dynamic';
 
 import './globals.css';
 import { useState, useEffect } from 'react';
@@ -18,8 +17,13 @@ export default function Dashboard() {
   const [nome, setNome] = useState('');
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('');
+  const [mounted, setMounted] = useState(false);
 
-  // Buscar produtos do banco
+  useEffect(() => {
+    setMounted(true);
+    fetchProducts();
+  }, []);
+
   async function fetchProducts() {
     const { data, error } = await supabase.from('produtos').select('*');
     if (error) {
@@ -29,11 +33,6 @@ export default function Dashboard() {
     }
   }
 
-  useEffect(() => {
-    fetchProducts();
-  }, []);
-
-  // Cadastrar novo produto
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!nome || !quantidade || !preco) {
@@ -61,7 +60,6 @@ export default function Dashboard() {
     }
   }
 
-  // Função para dar baixa / registrar saída
   async function handleBaixa(id: string, quantidadeAtual: number) {
     const qtdStr = prompt('Quantidade que deseja retirar do estoque:');
     if (!qtdStr) return;
@@ -92,16 +90,18 @@ export default function Dashboard() {
     }
   }
 
+  if (!mounted) {
+    return null;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 p-8 font-sans">
       <div className="max-w-4xl mx-auto space-y-8">
-        {/* Cabeçalho */}
         <div>
           <h1 className="text-3xl font-bold text-slate-800">Clínica Médica - Gestão</h1>
           <p className="text-slate-500">Controle de Estoque de Insumos e Finanças</p>
         </div>
 
-        {/* Formulário de Cadastro */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Insumo</h2>
           <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -156,7 +156,6 @@ export default function Dashboard() {
           </form>
         </div>
 
-        {/* Tabela de Produtos */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
           <h2 className="text-xl font-semibold text-slate-800 mb-4">Itens em Estoque</h2>
           <div className="overflow-x-auto">
