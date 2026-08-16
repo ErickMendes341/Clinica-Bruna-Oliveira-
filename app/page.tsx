@@ -90,31 +90,35 @@ export default function Dashboard() {
   }
 
   async function fetchProducts() {
-    const { data } = await supabase.from('produtos').select('*').order('nome', { ascending: true });
-    if (data) setProducts(data);
+    const { data, error } = await supabase.from('produtos').select('*').order('nome', { ascending: true });
+    if (error) console.error('Erro ao buscar produtos:', error);
+    else if (data) setProducts(data);
   }
 
   async function fetchHistorico() {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('historico_movimentacoes')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(10);
-    if (data) setHistorico(data as Movimentacao[]);
+    if (error) console.error('Erro ao buscar histórico:', error);
+    else if (data) setHistorico(data as Movimentacao[]);
   }
 
   async function fetchPacientes() {
-    const { data } = await supabase.from('pacientes').select('*').order('nome', { ascending: true });
-    if (data) setPacientes(data);
+    const { data, error } = await supabase.from('pacientes').select('*').order('nome', { ascending: true });
+    if (error) console.error('Erro ao buscar pacientes:', error);
+    else if (data) setPacientes(data);
   }
 
   async function fetchConsumos(pacienteId: string) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('consumos_paciente')
       .select('*')
       .eq('paciente_id', pacienteId)
       .order('created_at', { ascending: false });
-    if (data) setConsumos(data);
+    if (error) console.error('Erro ao buscar consumos:', error);
+    else if (data) setConsumos(data);
   }
 
   // --- ESTOQUE HANDLERS ---
@@ -126,8 +130,12 @@ export default function Dashboard() {
       { nome, categoria, lote: lote || null, quantidade: parseInt(quantidade), quantidade_minima: 10, preco_custo: parseFloat(preco), validade: validade || null },
     ]).select();
 
-    if (!error && data && data[0]) {
-      await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
+    if (error) {
+      alert(`Erro ao cadastrar produto: ${error.message}`);
+    } else {
+      if (data && data[0]) {
+        await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
+      }
       setNome(''); setCategoria('medicacao'); setLote(''); setQuantidade(''); setPreco(''); setValidade('');
       fetchData();
     }
@@ -183,15 +191,36 @@ export default function Dashboard() {
   // --- PACIENTES HANDLERS ---
   async function handleAddPaciente(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomePaciente) return alert('Informe o nome do paciente!');
+    if (!nomePaciente.trim()) {
+      alert('Informe o nome do paciente!');
+      return;
+    }
 
-    const { error } = await supabase.from('pacientes').insert([
-      { nome: nomePaciente, cpf: cpfPaciente || null, telefone: telPaciente || null }
-    ]);
+    try {
+      const { data, error } = await supabase
+        .from('pacientes')
+        .insert([
+          { 
+            nome: nomePaciente, 
+            cpf: cpfPaciente || null, 
+            telefone: telPaciente || null 
+          }
+        ])
+        .select();
 
-    if (!error) {
-      setNomePaciente(''); setCpfPaciente(''); setTelPaciente('');
-      fetchPacientes();
+      if (error) {
+        alert(`Erro ao cadastrar paciente: ${error.message}`);
+        console.error('Erro Supabase:', error);
+      } else {
+        alert('Paciente cadastrado com sucesso!');
+        setNomePaciente('');
+        setCpfPaciente('');
+        setTelPaciente('');
+        fetchPacientes();
+      }
+    } catch (err) {
+      console.error('Erro de rede/execução:', err);
+      alert('Erro inesperado ao cadastrar paciente.');
     }
   }
 
@@ -271,7 +300,7 @@ export default function Dashboard() {
         {/* VIEW: CONTROLE DE ESTOQUE */}
         {mainTab === 'estoque' && (
           <>
-            {/* FORMULÁRIO DE CADASTRO */}
+            {/* FORMULÁRIO DE CADASTRO DE PRODUTO */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Item</h2>
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
@@ -340,8 +369,8 @@ export default function Dashboard() {
                         <td className="py-3 px-2 font-medium">{p.nome}</td>
                         <td className="py-3 px-2 text-xs font-semibold">{p.categoria}</td>
                         <td className="py-3 px-2 font-semibold">{p.quantidade} un.</td>
-                        <td className="py-3 px-2">R$ {Number(p.preco_custo).toFixed(2)}</td>
-                        <td className="py-3 px-2 text-sm">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR') : '-'}</td>
+                        <td className="py-3 px-2">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
+                        <td className="py-3 px-2 text-sm">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
                         <td className="py-3 px-2 text-center space-x-1">
                           <button onClick={() => handleEntrada(p)} className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold">+ Repor</button>
                           <button onClick={() => handleBaixa(p)} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-semibold">- Baixa</button>
@@ -361,7 +390,7 @@ export default function Dashboard() {
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* COLUNA 1: CADASTRO E LISTA DE PACIENTES */}
+            {/* CADASTRO E LISTA DE PACIENTES */}
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Paciente</h2>
@@ -378,7 +407,7 @@ export default function Dashboard() {
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone</label>
                     <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="(00) 90000-0000" />
                   </div>
-                  <button type="submit" className="w-full bg-blue-600 text-white font-medium py-2 rounded-lg text-sm">Cadastrar Paciente</button>
+                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition-colors">Cadastrar Paciente</button>
                 </form>
               </div>
 
@@ -402,7 +431,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* COLUNA 2 & 3: FICHA DO PACIENTE SELECIONADO */}
+            {/* FICHA DO PACIENTE SELECIONADO */}
             <div className="lg:col-span-2">
               {selectedPaciente ? (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
@@ -445,7 +474,7 @@ export default function Dashboard() {
                         />
                       </div>
 
-                      <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg text-sm">
+                      <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors">
                         Dar Baixa & Registrar
                       </button>
                     </form>
