@@ -33,6 +33,7 @@ interface Paciente {
   altura?: number;
   endereco?: string;
   observacoes?: string;
+  data_retorno?: string;
 }
 
 interface ConsumoPaciente {
@@ -79,6 +80,7 @@ export default function Dashboard() {
   const [altura, setAltura] = useState('');
   const [endereco, setEndereco] = useState('');
   const [observacoes, setObservacoes] = useState('');
+  const [dataRetorno, setDataRetorno] = useState('');
   
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   
@@ -208,6 +210,7 @@ export default function Dashboard() {
     setAltura('');
     setEndereco('');
     setObservacoes('');
+    setDataRetorno('');
   }
 
   function handlePrepareEditPaciente(p: Paciente, e?: React.MouseEvent) {
@@ -221,6 +224,7 @@ export default function Dashboard() {
     setAltura(p.altura ? String(p.altura) : '');
     setEndereco(p.endereco || '');
     setObservacoes(p.observacoes || '');
+    setDataRetorno(p.data_retorno || '');
   }
 
   async function handleSavePaciente(e: React.FormEvent) {
@@ -244,7 +248,8 @@ export default function Dashboard() {
       peso: pesoParsed,
       altura: alturaParsed,
       endereco: endereco || null,
-      observacoes: observacoes || null
+      observacoes: observacoes || null,
+      data_retorno: dataRetorno || null
     };
 
     try {
@@ -305,6 +310,36 @@ export default function Dashboard() {
     return `${idade} anos`;
   }
 
+  function ehAniversarianteHoje(dataNascimentoStr?: string) {
+    if (!dataNascimentoStr) return false;
+    const nascimento = new Date(dataNascimentoStr);
+    const hoje = new Date();
+    return (
+      nascimento.getUTCDate() === hoje.getDate() &&
+      nascimento.getUTCMonth() === hoje.getMonth()
+    );
+  }
+
+  function ehRetornoAmanha(dataRetornoStr?: string) {
+    if (!dataRetornoStr) return false;
+    const retorno = new Date(dataRetornoStr);
+    const amanha = new Date();
+    amanha.setDate(amanha.getDate() + 1);
+
+    return (
+      retorno.getUTCDate() === amanha.getDate() &&
+      retorno.getUTCMonth() === amanha.getMonth() &&
+      retorno.getUTCFullYear() === amanha.getFullYear()
+    );
+  }
+
+  function getWhatsAppLink(telefone?: string, mensagemCustomizada?: string) {
+    if (!telefone) return '#';
+    const numLimpo = telefone.replace(/\D/g, '');
+    const numComDDI = numLimpo.startsWith('55') ? numLimpo : `55${numLimpo}`;
+    return `https://wa.me/${numComDDI}?text=${encodeURIComponent(mensagemCustomizada || '')}`;
+  }
+
   async function handleUsarItemNoPaciente(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPaciente || !selectedProdutoId) return alert('Selecione um item!');
@@ -332,11 +367,22 @@ export default function Dashboard() {
     fetchConsumos(selectedPaciente.id);
   }
 
-  const filteredProducts = products.filter((product) => {
-    const matchesTab = activeTab === 'todos' || (product.categoria || 'insumos') === activeTab;
-    const matchesSearch = product.nome.toLowerCase().includes(searchTerm.toLowerCase()) || (product.lote && product.lote.toLowerCase().includes(searchTerm.toLowerCase()));
-    return matchesTab && matchesSearch;
-  });
+  // Ordena produtos: itens < 10 aparecem PRIMEIRO na lista
+  const filteredProducts = products
+    .filter((product) => {
+      const matchesTab = activeTab === 'todos' || (product.categoria || 'insumos') === activeTab;
+      const matchesSearch = product.nome.toLowerCase().includes(searchTerm.toLowerCase()) || (product.lote && product.lote.toLowerCase().includes(searchTerm.toLowerCase()));
+      return matchesTab && matchesSearch;
+    })
+    .sort((a, b) => {
+      const aBaixo = a.quantidade < 10 ? 0 : 1;
+      const bBaixo = b.quantidade < 10 ? 0 : 1;
+      return aBaixo - bBaixo;
+    });
+
+  const produtosEstoqueBaixo = products.filter(p => p.quantidade < 10);
+  const aniversariantesHoje = pacientes.filter(p => ehAniversarianteHoje(p.data_nascimento));
+  const retornosAmanha = pacientes.filter(p => ehRetornoAmanha(p.data_retorno));
 
   const filteredPacientes = pacientes.filter((p) => {
     const cleanSearch = searchPaciente.replace(/\D/g, '').toLowerCase();
@@ -402,15 +448,79 @@ export default function Dashboard() {
                 </button>
                 <button
                   onClick={() => setMainTab('estoque')}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm relative' : 'text-amber-900 hover:text-amber-950'}`}
                 >
                   📦 Estoque Médico
+                  {produtosEstoqueBaixo.length > 0 && (
+                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                      !
+                    </span>
+                  )}
                 </button>
               </div>
             </div>
 
           </div>
         </header>
+
+        {/* BANNERS DE ALERTAS GERAIS */}
+        <div className="space-y-3 print:hidden">
+          {/* BANNER DE ANIVERSARIANTES */}
+          {aniversariantesHoje.length > 0 && (
+            <div className="bg-amber-100 border-l-4 border-amber-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl">🎂</span>
+                <div>
+                  <h4 className="font-serif font-bold text-amber-950 text-sm">Aniversariantes do Dia ({aniversariantesHoje.length})</h4>
+                  <p className="text-xs text-amber-900">
+                    {aniversariantesHoje.map(p => p.nome).join(', ')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {aniversariantesHoje.map(p => (
+                  <a
+                    key={p.id}
+                    href={getWhatsAppLink(p.telefone, `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso!`)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    🎉 Parabéns p/ {p.nome.split(' ')[0]}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* BANNER DE RETORNOS AMANHÃ */}
+          {retornosAmanha.length > 0 && (
+            <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
+              <div className="flex items-center space-x-3">
+                <span className="text-2xl">🔔</span>
+                <div>
+                  <h4 className="font-serif font-bold text-blue-950 text-sm">Lembrete de Retorno Amannã ({retornosAmanha.length})</h4>
+                  <p className="text-xs text-blue-900">
+                    {retornosAmanha.map(p => p.nome).join(', ')}
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {retornosAmanha.map(p => (
+                  <a
+                    key={p.id}
+                    href={getWhatsAppLink(p.telefone, `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu retorno está agendado para amanhã. Confirmado?`)}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-all"
+                  >
+                    📩 Lembrar {p.nome.split(' ')[0]}
+                  </a>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* VIEW: PACIENTES & FICHAS */}
         {mainTab === 'pacientes' && (
@@ -465,6 +575,11 @@ export default function Dashboard() {
                   </div>
 
                   <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Data do Próximo Retorno</label>
+                    <input type="date" value={dataRetorno} onChange={(e) => setDataRetorno(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                  </div>
+
+                  <div>
                     <label className="block text-xs font-semibold text-amber-900 mb-1">Endereço</label>
                     <input type="text" value={endereco} onChange={(e) => setEndereco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Rua, número, cidade..." />
                   </div>
@@ -499,22 +614,30 @@ export default function Dashboard() {
                   {filteredPacientes.length === 0 ? (
                     <p className="text-xs text-amber-800/60 py-4 text-center">Nenhum paciente cadastrado.</p>
                   ) : (
-                    filteredPacientes.map((p) => (
-                      <div
-                        key={p.id}
-                        onClick={() => openFichaPaciente(p)}
-                        className={`p-3 my-1 cursor-pointer rounded-xl transition-all flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-amber-50 border-l-4 border-amber-700 shadow-sm' : 'hover:bg-amber-50/50'}`}
-                      >
-                        <div>
-                          <p className="font-semibold text-amber-950 text-sm">{p.nome}</p>
-                          <p className="text-xs text-amber-800/70">CPF: {p.cpf || 'Não informado'} • {calcularIdade(p.data_nascimento)}</p>
+                    filteredPacientes.map((p) => {
+                      const eAniversario = ehAniversarianteHoje(p.data_nascimento);
+                      const eRetorno = ehRetornoAmanha(p.data_retorno);
+                      return (
+                        <div
+                          key={p.id}
+                          onClick={() => openFichaPaciente(p)}
+                          className={`p-3 my-1 cursor-pointer rounded-xl transition-all flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-amber-50 border-l-4 border-amber-700 shadow-sm' : 'hover:bg-amber-50/50'}`}
+                        >
+                          <div>
+                            <div className="flex items-center space-x-1.5">
+                              <p className="font-semibold text-amber-950 text-sm">{p.nome}</p>
+                              {eAniversario && <span title="Aniversariante Hoje!">🎂</span>}
+                              {eRetorno && <span title="Retorno amanhã!">🔔</span>}
+                            </div>
+                            <p className="text-xs text-amber-800/70">CPF: {p.cpf || 'Não informado'} • {calcularIdade(p.data_nascimento)}</p>
+                          </div>
+                          <div className="flex items-center space-x-1">
+                            <button onClick={(e) => handlePrepareEditPaciente(p, e)} className="text-xs p-1.5 hover:bg-amber-100 rounded-md">✏️</button>
+                            <button onClick={(e) => handleDeletePaciente(p, e)} className="text-xs p-1.5 hover:bg-red-100 rounded-md">🗑️</button>
+                          </div>
                         </div>
-                        <div className="flex items-center space-x-1">
-                          <button onClick={(e) => handlePrepareEditPaciente(p, e)} className="text-xs p-1.5 hover:bg-amber-100 rounded-md">✏️</button>
-                          <button onClick={(e) => handleDeletePaciente(p, e)} className="text-xs p-1.5 hover:bg-red-100 rounded-md">🗑️</button>
-                        </div>
-                      </div>
-                    ))
+                      );
+                    })
                   )}
                 </div>
               </div>
@@ -534,16 +657,36 @@ export default function Dashboard() {
                           <span className="text-[10px] uppercase tracking-wider font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full print:hidden">
                             Ficha Técnica do Paciente
                           </span>
+                          {ehAniversarianteHoje(selectedPaciente.data_nascimento) && (
+                            <span className="text-[10px] uppercase font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">
+                              🎂 Aniversariante de Hoje!
+                            </span>
+                          )}
+                          {ehRetornoAmanha(selectedPaciente.data_retorno) && (
+                            <span className="text-[10px] uppercase font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
+                              🔔 Retorno Amanhã!
+                            </span>
+                          )}
                         </div>
                         <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950">{selectedPaciente.nome}</h2>
                       </div>
                       
                       <div className="flex items-center space-x-2 print:hidden">
+                        {selectedPaciente.telefone && (
+                          <a
+                            href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome} aqui é da clinica Bruna Oliveira.`)}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
+                          >
+                            💬 Contatar no WhatsApp
+                          </a>
+                        )}
                         <button
                           onClick={() => window.print()}
                           className="text-xs bg-amber-900 hover:bg-amber-950 text-white font-semibold px-4 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
                         >
-                          🖨️ Imprimir Ficha
+                          🖨️ Imprimir
                         </button>
                         <button onClick={() => handlePrepareEditPaciente(selectedPaciente)} className="text-xs bg-amber-100 text-amber-900 font-semibold px-3 py-2 rounded-xl hover:bg-amber-200">
                           ✏️ Editar
@@ -565,8 +708,10 @@ export default function Dashboard() {
                         <span className="font-medium text-amber-950">{selectedPaciente.peso ? `${selectedPaciente.peso} kg` : '-'} / {selectedPaciente.altura ? `${selectedPaciente.altura} m` : '-'}</span>
                       </div>
                       <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
-                        <span className="text-amber-800/70 block font-semibold">Idade / Nascimento</span>
-                        <span className="font-medium text-amber-950">{calcularIdade(selectedPaciente.data_nascimento)} {selectedPaciente.data_nascimento ? `(${new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})` : ''}</span>
+                        <span className="text-amber-800/70 block font-semibold">Próximo Retorno</span>
+                        <span className="font-bold text-amber-900">
+                          {selectedPaciente.data_retorno ? new Date(selectedPaciente.data_retorno).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Não agendado'}
+                        </span>
                       </div>
                     </div>
 
@@ -596,7 +741,7 @@ export default function Dashboard() {
                           <option value="">Selecione o medicamento/suplemento...</option>
                           {products.map((p) => (
                             <option key={p.id} value={p.id} disabled={p.quantidade <= 0}>
-                              {p.nome} (Disponível: {p.quantidade} un.)
+                              {p.nome} (Disponível: {p.quantidade} un. {p.quantidade < 10 ? '⚠️' : ''})
                             </option>
                           ))}
                         </select>
@@ -665,6 +810,22 @@ export default function Dashboard() {
         {/* VIEW: ESTOQUE */}
         {mainTab === 'estoque' && (
           <div className="space-y-6">
+            
+            {/* PAINEL DE AVISO DE ESTOQUE CRÍTICO */}
+            {produtosEstoqueBaixo.length > 0 && (
+              <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-xl flex items-center justify-between shadow-sm">
+                <div className="flex items-center space-x-3">
+                  <span className="text-2xl">⚠️</span>
+                  <div>
+                    <h4 className="font-serif font-bold text-red-950 text-sm">Atenção: Itens com Estoque Baixo ({produtosEstoqueBaixo.length})</h4>
+                    <p className="text-xs text-red-900">
+                      Os seguintes itens estão com menos de 10 unidades: <strong>{produtosEstoqueBaixo.map(p => p.nome).join(', ')}</strong>
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
               <h2 className="text-lg font-serif font-bold text-amber-950 mb-4">Cadastrar Novo Produto / Insumo</h2>
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
@@ -729,20 +890,34 @@ export default function Dashboard() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-amber-100">
-                    {filteredProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-amber-50/30">
-                        <td className="py-3 px-3 font-medium text-amber-950">{p.nome}</td>
-                        <td className="py-3 px-3 text-xs uppercase text-amber-800">{p.categoria}</td>
-                        <td className="py-3 px-3 font-semibold text-amber-900">{p.quantidade} un.</td>
-                        <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
-                        <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
-                        <td className="py-3 px-3 text-center space-x-1">
-                          <button onClick={() => handleEntrada(p)} className="bg-emerald-700 text-white px-2 py-1 rounded-md text-xs font-semibold">+ Entrada</button>
-                          <button onClick={() => handleBaixa(p)} className="bg-amber-700 text-white px-2 py-1 rounded-md text-xs font-semibold">- Baixa</button>
-                          <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-700 text-white px-2 py-1 rounded-md text-xs font-semibold">Excluir</button>
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredProducts.map((p) => {
+                      const isBaixo = p.quantidade < 10;
+                      return (
+                        <tr key={p.id} className={`transition-colors ${isBaixo ? 'bg-red-50/60 hover:bg-red-100/60' : 'hover:bg-amber-50/30'}`}>
+                          <td className="py-3 px-3 font-medium text-amber-950">
+                            <div className="flex items-center space-x-2">
+                              <span>{p.nome}</span>
+                              {isBaixo && (
+                                <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                                  ⚠️ ESTOQUE BAIXO (&lt;10)
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-xs uppercase text-amber-800">{p.categoria}</td>
+                          <td className={`py-3 px-3 font-bold ${isBaixo ? 'text-red-700' : 'text-amber-900'}`}>
+                            {p.quantidade} un.
+                          </td>
+                          <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
+                          <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
+                          <td className="py-3 px-3 text-center space-x-1">
+                            <button onClick={() => handleEntrada(p)} className="bg-emerald-700 text-white px-2 py-1 rounded-md text-xs font-semibold">+ Entrada</button>
+                            <button onClick={() => handleBaixa(p)} className="bg-amber-700 text-white px-2 py-1 rounded-md text-xs font-semibold">- Baixa</button>
+                            <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-700 text-white px-2 py-1 rounded-md text-xs font-semibold">Excluir</button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
