@@ -46,12 +46,12 @@ interface ConsumoPaciente {
 const CATEGORIAS = [
   { id: 'todos', label: 'Todos os Itens' },
   { id: 'medicacao', label: 'Medicação' },
-  { id: 'insumos', label: 'Insumos' },
+  { id: 'insumos', label: 'Insumos / Suplementos' },
   { id: 'descartaveis', label: 'Descartáveis' },
 ];
 
 export default function Dashboard() {
-  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes'>('estoque');
+  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes'>('pacientes');
   
   // Estados do Estoque
   const [products, setProducts] = useState<Product[]>([]);
@@ -70,7 +70,7 @@ export default function Dashboard() {
   // Estados de Pacientes
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [editingPacienteId, setEditingPacienteId] = useState<string | null>(null);
-  const [searchPaciente, setSearchPaciente] = useState(''); // Busca por Nome/CPF
+  const [searchPaciente, setSearchPaciente] = useState('');
   const [nomePaciente, setNomePaciente] = useState('');
   const [cpfPaciente, setCpfPaciente] = useState('');
   const [telPaciente, setTelPaciente] = useState('');
@@ -179,24 +179,21 @@ export default function Dashboard() {
   }
 
   async function handleDeleteProduct(id: string, nome: string) {
-    if (!confirm(`Tem certeza que deseja excluir "${nome}"? Todo o histórico deste item também será removido.`)) return;
+    if (!confirm(`Tem certeza que deseja excluir "${nome}"?`)) return;
 
     try {
       await supabase.from('historico_movimentacoes').delete().eq('produto_id', id);
       await supabase.from('consumos_paciente').delete().eq('produto_id', id);
-
       const { error } = await supabase.from('produtos').delete().eq('id', id);
 
       if (error) {
         alert(`Erro ao excluir produto: ${error.message}`);
       } else {
         setProducts(prev => prev.filter(item => item.id !== id));
-        alert('Produto excluído com sucesso!');
         fetchData();
       }
     } catch (err) {
       console.error('Erro ao excluir produto:', err);
-      alert('Ocorreu um erro ao tentar excluir o produto.');
     }
   }
 
@@ -228,10 +225,7 @@ export default function Dashboard() {
 
   async function handleSavePaciente(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomePaciente.trim()) {
-      alert('Informe o nome do paciente!');
-      return;
-    }
+    if (!nomePaciente.trim()) return alert('Informe o nome do paciente!');
 
     let alturaParsed: number | null = null;
     if (altura) {
@@ -240,9 +234,7 @@ export default function Dashboard() {
     }
 
     let pesoParsed: number | null = null;
-    if (peso) {
-      pesoParsed = parseFloat(String(peso).replace(',', '.'));
-    }
+    if (peso) pesoParsed = parseFloat(String(peso).replace(',', '.'));
 
     const payload = {
       nome: nomePaciente, 
@@ -257,15 +249,9 @@ export default function Dashboard() {
 
     try {
       if (editingPacienteId) {
-        const { error } = await supabase
-          .from('pacientes')
-          .update(payload)
-          .eq('id', editingPacienteId);
-
-        if (error) {
-          alert(`Erro ao atualizar paciente: ${error.message}`);
-        } else {
-          alert('Paciente atualizado com sucesso!');
+        const { error } = await supabase.from('pacientes').update(payload).eq('id', editingPacienteId);
+        if (error) alert(`Erro ao atualizar paciente: ${error.message}`);
+        else {
           if (selectedPaciente?.id === editingPacienteId) {
             setSelectedPaciente({ id: editingPacienteId, ...payload } as Paciente);
           }
@@ -273,27 +259,21 @@ export default function Dashboard() {
           fetchPacientes();
         }
       } else {
-        const { error } = await supabase
-          .from('pacientes')
-          .insert([payload]);
-
-        if (error) {
-          alert(`Erro ao cadastrar paciente: ${error.message}`);
-        } else {
-          alert('Paciente cadastrado com sucesso!');
+        const { error } = await supabase.from('pacientes').insert([payload]);
+        if (error) alert(`Erro ao cadastrar paciente: ${error.message}`);
+        else {
           limpaFormularioPaciente();
           fetchPacientes();
         }
       }
     } catch (err) {
       console.error('Erro:', err);
-      alert('Erro inesperado ao salvar paciente.');
     }
   }
 
   async function handleDeletePaciente(p: Paciente, e?: React.MouseEvent) {
     if (e) e.stopPropagation();
-    if (!confirm(`Tem certeza que deseja excluir o paciente "${p.nome}"? Todo o histórico dele será excluído.`)) return;
+    if (!confirm(`Tem certeza que deseja excluir o paciente "${p.nome}"?`)) return;
 
     await supabase.from('consumos_paciente').delete().eq('paciente_id', p.id);
     const { error } = await supabase.from('pacientes').delete().eq('id', p.id);
@@ -301,14 +281,11 @@ export default function Dashboard() {
     if (error) {
       alert(`Erro ao excluir paciente: ${error.message}`);
     } else {
-      alert('Paciente excluído com sucesso!');
       if (selectedPaciente?.id === p.id) {
         setSelectedPaciente(null);
         setConsumos([]);
       }
-      if (editingPacienteId === p.id) {
-        limpaFormularioPaciente();
-      }
+      if (editingPacienteId === p.id) limpaFormularioPaciente();
       fetchPacientes();
     }
   }
@@ -324,9 +301,7 @@ export default function Dashboard() {
     const hoje = new Date();
     let idade = hoje.getFullYear() - nascimento.getFullYear();
     const m = hoje.getMonth() - nascimento.getMonth();
-    if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) {
-      idade--;
-    }
+    if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) idade--;
     return `${idade} anos`;
   }
 
@@ -346,9 +321,7 @@ export default function Dashboard() {
 
     const novaQtd = produto.quantidade - qtd;
     await supabase.from('produtos').update({ quantidade: novaQtd }).eq('id', produto.id);
-
     await registrarMovimentacao(produto.id, `${produto.nome} (Paciente: ${selectedPaciente.nome})`, 'SAIDA', qtd);
-
     await supabase.from('consumos_paciente').insert([
       { paciente_id: selectedPaciente.id, produto_id: produto.id, nome_produto: produto.nome, quantidade: qtd }
     ]);
@@ -357,7 +330,6 @@ export default function Dashboard() {
     setSelectedProdutoId('');
     fetchData();
     fetchConsumos(selectedPaciente.id);
-    alert(`Item lançado na ficha do paciente e baixado do estoque!`);
   }
 
   const filteredProducts = products.filter((product) => {
@@ -366,7 +338,6 @@ export default function Dashboard() {
     return matchesTab && matchesSearch;
   });
 
-  // Filtro de Pacientes por Nome ou CPF (Remove pontuação para facilitar a busca de CPF)
   const filteredPacientes = pacientes.filter((p) => {
     const cleanSearch = searchPaciente.replace(/\D/g, '').toLowerCase();
     const cleanCPF = (p.cpf || '').replace(/\D/g, '').toLowerCase();
@@ -378,134 +349,82 @@ export default function Dashboard() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
+    <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* NAVEGAÇÃO PRINCIPAL (Oculta na impressão) */}
-        <div className="flex items-center justify-between border-b pb-4 print:hidden">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-800">Clínica Médica</h1>
-            <p className="text-slate-500">Gestão de Estoque e Ficha do Paciente</p>
-          </div>
-          <div className="flex space-x-2 bg-slate-200 p-1 rounded-xl">
-            <button
-              onClick={() => setMainTab('estoque')}
-              className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${mainTab === 'estoque' ? 'bg-white text-blue-600 shadow' : 'text-slate-600'}`}
-            >
-              📦 Controle de Estoque
-            </button>
-            <button
-              onClick={() => setMainTab('pacientes')}
-              className={`px-5 py-2.5 rounded-lg text-sm font-semibold transition-all ${mainTab === 'pacientes' ? 'bg-white text-blue-600 shadow' : 'text-slate-600'}`}
-            >
-              👤 Pacientes & Fichas
-            </button>
-          </div>
-        </div>
-
-        {/* VIEW: CONTROLE DE ESTOQUE */}
-        {mainTab === 'estoque' && (
-          <>
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-              <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Item</h2>
-              <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
-                <div className="lg:col-span-2">
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Nome do Item</label>
-                  <input type="text" placeholder="Ex: Paracetamol..." value={nome} onChange={(e) => setNome(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
+        {/* CABEÇALHO DA CLÍNICA & DORA. BRUNA OLIVEIRA */}
+        <header className="bg-white border border-amber-200/80 rounded-2xl shadow-sm p-6 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-0"></div>
+          
+          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
+            
+            {/* LOGO & IDENTIDADE */}
+            <div className="flex items-center space-x-4">
+              <div className="w-20 h-20 rounded-full border-2 border-amber-500/40 p-1 bg-amber-50/50 flex items-center justify-center shadow-inner">
+                <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-white font-serif font-bold text-2xl shadow">
+                  BO
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Categoria</label>
-                  <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none bg-white">
-                    <option value="medicacao">Medicação</option>
-                    <option value="insumos">Insumos</option>
-                    <option value="descartaveis">Descartáveis</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Nº do Lote</label>
-                  <input type="text" placeholder="L12345" value={lote} onChange={(e) => setLote(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Qtd. Inicial</label>
-                  <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Preço (R$)</label>
-                  <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">Validade</label>
-                  <input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} className="w-full px-3 py-2 border rounded-lg outline-none" />
-                </div>
-                <div className="lg:col-span-7 flex justify-end">
-                  <button type="submit" className="bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 px-6 rounded-lg">Salvar Cadastro</button>
-                </div>
-              </form>
-            </div>
-
-            <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
-              <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b pb-4">
-                <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
-                  {CATEGORIAS.map((cat) => (
-                    <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`px-4 py-2 text-sm font-medium rounded-md ${activeTab === cat.id ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600'}`}>
-                      {cat.label}
-                    </button>
-                  ))}
-                </div>
-                <input type="text" placeholder="🔍 Pesquisar item..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border rounded-lg text-sm outline-none" />
               </div>
-
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="border-b text-slate-600 text-sm">
-                      <th className="py-3 px-2">Nome</th>
-                      <th className="py-3 px-2">Categoria</th>
-                      <th className="py-3 px-2">Quantidade</th>
-                      <th className="py-3 px-2">Preço Un.</th>
-                      <th className="py-3 px-2">Validade</th>
-                      <th className="py-3 px-2 text-center">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y text-slate-700">
-                    {filteredProducts.map((p) => (
-                      <tr key={p.id} className="hover:bg-slate-50">
-                        <td className="py-3 px-2 font-medium">{p.nome}</td>
-                        <td className="py-3 px-2 text-xs font-semibold">{p.categoria}</td>
-                        <td className="py-3 px-2 font-semibold">{p.quantidade} un.</td>
-                        <td className="py-3 px-2">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
-                        <td className="py-3 px-2 text-sm">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
-                        <td className="py-3 px-2 text-center space-x-1">
-                          <button onClick={() => handleEntrada(p)} className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold">+ Repor</button>
-                          <button onClick={() => handleBaixa(p)} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-semibold">- Baixa</button>
-                          <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">🗑️ Excluir</button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div>
+                <h1 className="text-2xl md:text-3xl font-serif font-bold text-amber-950 tracking-tight">
+                  Dra. Bruna Oliveira
+                </h1>
+                <p className="text-amber-800 text-sm font-medium tracking-wide uppercase">
+                  Medicina do Esporte & Performance
+                </p>
+                <div className="flex items-center space-x-3 text-xs text-amber-900/70 mt-1">
+                  <span>📍 Rua Juca Stockler, 2029 - Passos/MG</span>
+                  <span>•</span>
+                  <span>📞 (35) 99987-1770</span>
+                </div>
               </div>
             </div>
-          </>
-        )}
+
+            {/* BOTÕES DE NAVEGAÇÃO E WHATSAPP */}
+            <div className="flex flex-col sm:flex-row items-center gap-3 print:hidden">
+              <a
+                href="https://wa.me/5535999871770"
+                target="_blank"
+                rel="noreferrer"
+                className="w-full sm:w-auto text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2.5 rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+              >
+                💬 WhatsApp Clínica
+              </a>
+              
+              <div className="flex space-x-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50">
+                <button
+                  onClick={() => setMainTab('pacientes')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'pacientes' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                >
+                  👤 Pacientes
+                </button>
+                <button
+                  onClick={() => setMainTab('estoque')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                >
+                  📦 Estoque Médico
+                </button>
+              </div>
+            </div>
+
+          </div>
+        </header>
 
         {/* VIEW: PACIENTES & FICHAS */}
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* COLUNA DA ESQUERDA: CADASTRO E LISTA (Ocultos na impressão) */}
+            {/* COLUNA ESQUERDA: FORMULÁRIO E LISTA DE PACIENTES */}
             <div className="space-y-6 print:hidden">
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
+              
+              {/* FORMULÁRIO DE PACIENTE */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-xl font-semibold text-slate-800">
-                    {editingPacienteId ? 'Editar Paciente' : 'Cadastrar Paciente'}
+                  <h2 className="text-lg font-serif font-bold text-amber-950">
+                    {editingPacienteId ? 'Editar Paciente' : 'Novo Paciente'}
                   </h2>
                   {editingPacienteId && (
-                    <button
-                      type="button"
-                      onClick={limpaFormularioPaciente}
-                      className="text-xs text-slate-500 underline hover:text-slate-800"
-                    >
+                    <button onClick={limpaFormularioPaciente} className="text-xs text-amber-700 hover:underline">
                       Cancelar
                     </button>
                   )}
@@ -513,190 +432,169 @@ export default function Dashboard() {
 
                 <form onSubmit={handleSavePaciente} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo *</label>
-                    <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ex: Maria Silva" required />
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Nome Completo *</label>
+                    <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="Ex: Lucas Andrade" required />
                   </div>
                   
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">CPF</label>
-                      <input type="text" value={cpfPaciente} onChange={(e) => setCpfPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="000.000.000-00" />
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">CPF</label>
+                      <input type="text" value={cpfPaciente} onChange={(e) => setCpfPaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="000.000.000-00" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone</label>
-                      <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="(00) 90000-0000" />
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Telefone</label>
+                      <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="(35) 90000-0000" />
                     </div>
                   </div>
 
                   <div className="grid grid-cols-3 gap-2">
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Nascimento</label>
-                      <input type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} className="w-full px-2 py-2 border rounded-lg text-xs" />
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Nascimento</label>
+                      <input type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} className="w-full px-2 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Peso (kg)</label>
-                      <input type="text" value={peso} onChange={(e) => setPeso(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="70" />
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Peso (kg)</label>
+                      <input type="text" value={peso} onChange={(e) => setPeso(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="75" />
                     </div>
                     <div>
-                      <label className="block text-xs font-semibold text-slate-600 mb-1">Altura (m)</label>
-                      <input type="text" value={altura} onChange={(e) => setAltura(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="1.68 ou 168" />
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Altura (m)</label>
+                      <input type="text" value={altura} onChange={(e) => setAltura(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="1.75" />
                     </div>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Endereço</label>
-                    <input type="text" value={endereco} onChange={(e) => setEndereco(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Rua, número, bairro..." />
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Endereço</label>
+                    <input type="text" value={endereco} onChange={(e) => setEndereco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Rua, número, cidade..." />
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Descrição / Histórico do Paciente</label>
-                    <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm outline-none" placeholder="Alergias, observações médicas, preferências..."></textarea>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Histórico Clínico / Avaliação Esportiva</label>
+                    <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Objetivos esportivos, lesões prévias, suplementação em uso..."></textarea>
                   </div>
 
                   <button
                     type="submit"
-                    className={`w-full text-white font-medium py-2 rounded-lg text-sm transition-colors ${editingPacienteId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                    className={`w-full text-white font-medium py-2.5 rounded-xl text-sm transition-all shadow ${editingPacienteId ? 'bg-amber-700 hover:bg-amber-800' : 'bg-gradient-to-r from-amber-700 to-amber-900 hover:opacity-95'}`}
                   >
-                    {editingPacienteId ? 'Salvar Alterações' : 'Cadastrar Paciente'}
+                    {editingPacienteId ? 'Atualizar Paciente' : 'Salvar Paciente'}
                   </button>
                 </form>
               </div>
 
-              {/* LISTA DE PACIENTES COM BUSCA POR NOME E CPF */}
-              <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-lg font-semibold text-slate-800 mb-3">Lista de Pacientes</h2>
+              {/* LISTA DE PACIENTES COM BUSCA POR NOME OU CPF */}
+              <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
+                <h2 className="text-lg font-serif font-bold text-amber-950 mb-3">Buscar Paciente</h2>
                 
-                {/* CAMPO DE BUSCA */}
-                <div className="mb-3">
-                  <input
-                    type="text"
-                    placeholder="🔍 Buscar por Nome ou CPF..."
-                    value={searchPaciente}
-                    onChange={(e) => setSearchPaciente(e.target.value)}
-                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
+                <input
+                  type="text"
+                  placeholder="🔍 Digite o Nome ou CPF..."
+                  value={searchPaciente}
+                  onChange={(e) => setSearchPaciente(e.target.value)}
+                  className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50 mb-3"
+                />
 
-                <div className="divide-y max-h-80 overflow-y-auto">
+                <div className="divide-y divide-amber-100 max-h-80 overflow-y-auto pr-1">
                   {filteredPacientes.length === 0 ? (
-                    <p className="text-xs text-slate-400 py-4 text-center">Nenhum paciente encontrado.</p>
+                    <p className="text-xs text-amber-800/60 py-4 text-center">Nenhum paciente cadastrado.</p>
                   ) : (
                     filteredPacientes.map((p) => (
                       <div
                         key={p.id}
                         onClick={() => openFichaPaciente(p)}
-                        className={`p-3 cursor-pointer rounded-lg transition-colors flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-slate-50'}`}
+                        className={`p-3 my-1 cursor-pointer rounded-xl transition-all flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-amber-50 border-l-4 border-amber-700 shadow-sm' : 'hover:bg-amber-50/50'}`}
                       >
                         <div>
-                          <p className="font-semibold text-slate-800 text-sm">{p.nome}</p>
-                          <p className="text-xs text-slate-500">CPF: {p.cpf || 'Não informado'} • {calcularIdade(p.data_nascimento)}</p>
+                          <p className="font-semibold text-amber-950 text-sm">{p.nome}</p>
+                          <p className="text-xs text-amber-800/70">CPF: {p.cpf || 'Não informado'} • {calcularIdade(p.data_nascimento)}</p>
                         </div>
-                        <div className="flex items-center space-x-2">
-                          <button
-                            title="Editar Paciente"
-                            onClick={(e) => handlePrepareEditPaciente(p, e)}
-                            className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold px-2 py-1 rounded"
-                          >
-                            ✏️
-                          </button>
-                          <button
-                            title="Excluir Paciente"
-                            onClick={(e) => handleDeletePaciente(p, e)}
-                            className="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-2 py-1 rounded"
-                          >
-                            🗑️
-                          </button>
+                        <div className="flex items-center space-x-1">
+                          <button onClick={(e) => handlePrepareEditPaciente(p, e)} className="text-xs p-1.5 hover:bg-amber-100 rounded-md">✏️</button>
+                          <button onClick={(e) => handleDeletePaciente(p, e)} className="text-xs p-1.5 hover:bg-red-100 rounded-md">🗑️</button>
                         </div>
                       </div>
                     ))
                   )}
                 </div>
               </div>
+
             </div>
 
-            {/* FICHA DO PACIENTE SELECIONADO (Ocupa a página na Impressão) */}
+            {/* PAINEL DA FICHA DO PACIENTE */}
             <div className="lg:col-span-2 print:w-full print:col-span-3">
               {selectedPaciente ? (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6 print:border-none print:shadow-none print:p-0">
+                <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-amber-200/80 space-y-6 print:border-none print:shadow-none print:p-0">
                   
                   {/* CABEÇALHO DA FICHA */}
-                  <div className="border-b pb-4">
+                  <div className="border-b border-amber-100 pb-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded print:hidden">Ficha Médica</span>
-                        <h2 className="text-2xl font-bold text-slate-800 mt-1">{selectedPaciente.nome}</h2>
+                        <span className="text-[10px] uppercase tracking-wider font-bold bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full print:hidden">
+                          Ficha Técnica do Paciente
+                        </span>
+                        <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950 mt-2">{selectedPaciente.nome}</h2>
                       </div>
                       
-                      {/* BOTAO IMPRIMIR E DEMAIS ACOES */}
+                      {/* BOTÕES DE AÇÃO */}
                       <div className="flex items-center space-x-2 print:hidden">
                         <button
                           onClick={() => window.print()}
-                          className="text-xs bg-slate-800 hover:bg-slate-900 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow"
+                          className="text-xs bg-amber-900 hover:bg-amber-950 text-white font-semibold px-4 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
                         >
                           🖨️ Imprimir Ficha
                         </button>
-                        <button
-                          onClick={() => handlePrepareEditPaciente(selectedPaciente)}
-                          className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                        >
+                        <button onClick={() => handlePrepareEditPaciente(selectedPaciente)} className="text-xs bg-amber-100 text-amber-900 font-semibold px-3 py-2 rounded-xl hover:bg-amber-200">
                           ✏️ Editar
-                        </button>
-                        <button
-                          onClick={() => handleDeletePaciente(selectedPaciente)}
-                          className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
-                        >
-                          🗑️ Excluir
                         </button>
                       </div>
                     </div>
 
-                    {/* CARTÕES DE DETALHES */}
+                    {/* DADOS RESUMIDOS */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
-                      <div className="bg-slate-50 p-2.5 rounded-lg border">
-                        <span className="text-slate-400 block font-semibold">CPF</span>
-                        <span className="font-medium text-slate-700">{selectedPaciente.cpf || '-'}</span>
+                      <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
+                        <span className="text-amber-800/70 block font-semibold">CPF</span>
+                        <span className="font-medium text-amber-950">{selectedPaciente.cpf || '-'}</span>
                       </div>
-                      <div className="bg-slate-50 p-2.5 rounded-lg border">
-                        <span className="text-slate-400 block font-semibold">Telefone</span>
-                        <span className="font-medium text-slate-700">{selectedPaciente.telefone || '-'}</span>
+                      <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
+                        <span className="text-amber-800/70 block font-semibold">Telefone</span>
+                        <span className="font-medium text-amber-950">{selectedPaciente.telefone || '-'}</span>
                       </div>
-                      <div className="bg-slate-50 p-2.5 rounded-lg border">
-                        <span className="text-slate-400 block font-semibold">Peso / Altura</span>
-                        <span className="font-medium text-slate-700">{selectedPaciente.peso ? `${selectedPaciente.peso} kg` : '-'} / {selectedPaciente.altura ? `${selectedPaciente.altura} m` : '-'}</span>
+                      <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
+                        <span className="text-amber-800/70 block font-semibold">Peso / Altura</span>
+                        <span className="font-medium text-amber-950">{selectedPaciente.peso ? `${selectedPaciente.peso} kg` : '-'} / {selectedPaciente.altura ? `${selectedPaciente.altura} m` : '-'}</span>
                       </div>
-                      <div className="bg-slate-50 p-2.5 rounded-lg border">
-                        <span className="text-slate-400 block font-semibold">Idade / Nascimento</span>
-                        <span className="font-medium text-slate-700">{calcularIdade(selectedPaciente.data_nascimento)} {selectedPaciente.data_nascimento ? `(${new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})` : ''}</span>
+                      <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
+                        <span className="text-amber-800/70 block font-semibold">Idade / Nascimento</span>
+                        <span className="font-medium text-amber-950">{calcularIdade(selectedPaciente.data_nascimento)} {selectedPaciente.data_nascimento ? `(${new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})` : ''}</span>
                       </div>
                     </div>
 
                     {selectedPaciente.endereco && (
-                      <p className="text-xs text-slate-600 mt-3">📍 <strong>Endereço:</strong> {selectedPaciente.endereco}</p>
+                      <p className="text-xs text-amber-900/80 mt-3">📍 <strong>Endereço:</strong> {selectedPaciente.endereco}</p>
                     )}
 
                     {selectedPaciente.observacoes && (
-                      <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
-                        <strong>📝 Observações / Histórico Médico:</strong>
-                        <p className="mt-1 whitespace-pre-wrap">{selectedPaciente.observacoes}</p>
+                      <div className="mt-4 p-4 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs text-amber-950">
+                        <strong className="block text-amber-900 mb-1">📝 Histórico Clínico & Anotações:</strong>
+                        <p className="whitespace-pre-wrap leading-relaxed">{selectedPaciente.observacoes}</p>
                       </div>
                     )}
                   </div>
 
-                  {/* FORMULÁRIO DE LANÇAMENTO (Oculto na impressão) */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
-                    <h3 className="font-semibold text-slate-800 text-sm mb-3">💉 Aplicar Item de Estoque no Paciente</h3>
+                  {/* LANÇAMENTO DE ITENS NO PACIENTE */}
+                  <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">
+                    <h3 className="font-serif font-semibold text-amber-950 text-sm mb-3">💉 Prescrever / Aplicar Item do Estoque</h3>
                     <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3">
                       <div className="flex-1">
                         <select
                           value={selectedProdutoId}
                           onChange={(e) => setSelectedProdutoId(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
                           required
                         >
-                          <option value="">Selecione o produto/medicação...</option>
+                          <option value="">Selecione o medicamento/suplemento...</option>
                           {products.map((p) => (
                             <option key={p.id} value={p.id} disabled={p.quantidade <= 0}>
-                              {p.nome} (Estoque: {p.quantidade} un.)
+                              {p.nome} (Disponível: {p.quantidade} un.)
                             </option>
                           ))}
                         </select>
@@ -708,41 +606,41 @@ export default function Dashboard() {
                           min="1"
                           value={qtdConsumo}
                           onChange={(e) => setQtdConsumo(e.target.value)}
-                          className="w-full px-3 py-2 border rounded-lg text-sm bg-white"
+                          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
                           placeholder="Qtd"
                           required
                         />
                       </div>
 
-                      <button type="submit" className="bg-emerald-600 hover:bg-emerald-700 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors">
-                        Dar Baixa & Registrar
+                      <button type="submit" className="bg-amber-800 hover:bg-amber-900 text-white font-medium px-4 py-2 rounded-lg text-sm transition-colors shadow-sm">
+                        Lançar na Ficha
                       </button>
                     </form>
                   </div>
 
-                  {/* HISTÓRICO DE CONSUMO DO PACIENTE */}
+                  {/* TABELA DE HISTÓRICO DE CONSUMO */}
                   <div>
-                    <h3 className="font-semibold text-slate-800 text-sm mb-3">📋 Histórico de Itens Utilizados pelo Paciente</h3>
-                    <div className="border rounded-lg overflow-hidden">
+                    <h3 className="font-serif font-bold text-amber-950 text-base mb-3">📋 Medicamentos & Procedimentos Aplicados</h3>
+                    <div className="border border-amber-200/80 rounded-xl overflow-hidden">
                       <table className="w-full text-left text-sm">
-                        <thead className="bg-slate-100 text-slate-600">
+                        <thead className="bg-amber-100/50 text-amber-950 border-b border-amber-200/80 font-serif">
                           <tr>
-                            <th className="py-2 px-3">Item Utilizado</th>
-                            <th className="py-2 px-3">Quantidade</th>
-                            <th className="py-2 px-3">Data / Hora</th>
+                            <th className="py-2.5 px-4">Descrição do Item</th>
+                            <th className="py-2.5 px-4">Quantidade</th>
+                            <th className="py-2.5 px-4">Data / Hora</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y">
+                        <tbody className="divide-y divide-amber-100">
                           {consumos.length === 0 ? (
                             <tr>
-                              <td colSpan={3} className="py-4 text-center text-slate-400">Nenhum item utilizado por este paciente ainda.</td>
+                              <td colSpan={3} className="py-6 text-center text-amber-800/50 text-xs">Nenhum item aplicado até o momento.</td>
                             </tr>
                           ) : (
                             consumos.map((c) => (
-                              <tr key={c.id}>
-                                <td className="py-2 px-3 font-medium text-slate-800">{c.nome_produto}</td>
-                                <td className="py-2 px-3 font-semibold text-slate-700">{c.quantidade} un.</td>
-                                <td className="py-2 px-3 text-slate-500 text-xs">{new Date(c.created_at).toLocaleString('pt-BR')}</td>
+                              <tr key={c.id} className="hover:bg-amber-50/30">
+                                <td className="py-2.5 px-4 font-medium text-amber-950">{c.nome_produto}</td>
+                                <td className="py-2.5 px-4 font-semibold text-amber-900">{c.quantidade} un.</td>
+                                <td className="py-2.5 px-4 text-amber-800/70 text-xs">{new Date(c.created_at).toLocaleString('pt-BR')}</td>
                               </tr>
                             ))
                           )}
@@ -753,10 +651,102 @@ export default function Dashboard() {
 
                 </div>
               ) : (
-                <div className="bg-white p-12 rounded-xl shadow-sm border border-slate-200 text-center text-slate-400">
-                  👈 Selecione um paciente na lista ao lado para abrir a ficha completa e lançar materiais.
+                <div className="bg-white p-12 rounded-2xl shadow-sm border border-amber-200/60 text-center text-amber-800/60 font-serif">
+                  👈 Selecione um paciente na lista ao lado para abrir a ficha médica.
                 </div>
               )}
+            </div>
+
+          </div>
+        )}
+
+        {/* VIEW: CONTROLE DE ESTOQUE */}
+        {mainTab === 'estoque' && (
+          <div className="space-y-6">
+            
+            {/* NOVO PRODUCTO */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
+              <h2 className="text-lg font-serif font-bold text-amber-950 mb-4">Cadastrar Novo Produto / Insumo</h2>
+              <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
+                <div className="lg:col-span-2">
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Nome do Item</label>
+                  <input type="text" placeholder="Ex: Vitamina D3..." value={nome} onChange={(e) => setNome(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Categoria</label>
+                  <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none">
+                    <option value="medicacao">Medicação</option>
+                    <option value="insumos">Insumos / Suplementos</option>
+                    <option value="descartaveis">Descartáveis</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Nº do Lote</label>
+                  <input type="text" placeholder="L1234" value={lote} onChange={(e) => setLote(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. Inicial</label>
+                  <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Preço Custo (R$)</label>
+                  <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Validade</label>
+                  <input type="date" value={validade} onChange={(e) => setValidade(e.target.value)} className="w-full px-2 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
+                </div>
+                <div className="lg:col-span-7 flex justify-end">
+                  <button type="submit" className="bg-amber-800 hover:bg-amber-900 text-white font-medium py-2 px-6 rounded-xl text-sm transition-all shadow">
+                    Cadastrar no Estoque
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* LISTA DE ESTOQUE */}
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60 space-y-4">
+              <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-amber-100 pb-4">
+                <div className="flex space-x-1 bg-amber-50 p-1 rounded-xl border border-amber-200/50">
+                  {CATEGORIAS.map((cat) => (
+                    <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${activeTab === cat.id ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900'}`}>
+                      {cat.label}
+                    </button>
+                  ))}
+                </div>
+                <input type="text" placeholder="🔍 Pesquisar no estoque..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-amber-50/50 text-amber-950 font-serif">
+                    <tr>
+                      <th className="py-3 px-3">Item</th>
+                      <th className="py-3 px-3">Categoria</th>
+                      <th className="py-3 px-3">Qtd. Atual</th>
+                      <th className="py-3 px-3">Preço Un.</th>
+                      <th className="py-3 px-3">Validade</th>
+                      <th className="py-3 px-3 text-center">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-amber-100">
+                    {filteredProducts.map((p) => (
+                      <tr key={p.id} className="hover:bg-amber-50/30">
+                        <td className="py-3 px-3 font-medium text-amber-950">{p.nome}</td>
+                        <td className="py-3 px-3 text-xs uppercase text-amber-800">{p.categoria}</td>
+                        <td className="py-3 px-3 font-semibold text-amber-900">{p.quantidade} un.</td>
+                        <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
+                        <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
+                        <td className="py-3 px-3 text-center space-x-1">
+                          <button onClick={() => handleEntrada(p)} className="bg-emerald-700 text-white px-2 py-1 rounded-md text-xs font-semibold">+ Entrada</button>
+                          <button onClick={() => handleBaixa(p)} className="bg-amber-700 text-white px-2 py-1 rounded-md text-xs font-semibold">- Baixa</button>
+                          <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-700 text-white px-2 py-1 rounded-md text-xs font-semibold">Excluir</button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
           </div>
