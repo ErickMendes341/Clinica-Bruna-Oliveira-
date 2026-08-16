@@ -29,6 +29,10 @@ interface Paciente {
   cpf?: string;
   telefone?: string;
   data_nascimento?: string;
+  peso?: number;
+  altura?: number;
+  endereco?: string;
+  observacoes?: string;
 }
 
 interface ConsumoPaciente {
@@ -64,11 +68,17 @@ export default function Dashboard() {
   const [validade, setValidade] = useState('');
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Estados de Pacientes
+  // Estados de Pacientes (Campos Expandidos)
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [nomePaciente, setNomePaciente] = useState('');
   const [cpfPaciente, setCpfPaciente] = useState('');
   const [telPaciente, setTelPaciente] = useState('');
+  const [dataNascimento, setDataNascimento] = useState('');
+  const [peso, setPeso] = useState('');
+  const [altura, setAltura] = useState('');
+  const [endereco, setEndereco] = useState('');
+  const [observacoes, setObservacoes] = useState('');
+  
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   
   // Estado de Consumo no Paciente
@@ -173,21 +183,6 @@ export default function Dashboard() {
     fetchData();
   }
 
-  async function handleSaveEdit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!editingProduct) return;
-    await supabase.from('produtos').update({
-      nome: editingProduct.nome,
-      categoria: editingProduct.categoria,
-      lote: editingProduct.lote || null,
-      quantidade: Number(editingProduct.quantidade),
-      preco_custo: Number(editingProduct.preco_custo),
-      validade: editingProduct.validade || null,
-    }).eq('id', editingProduct.id);
-    setEditingProduct(null);
-    fetchData();
-  }
-
   // --- PACIENTES HANDLERS ---
   async function handleAddPaciente(e: React.FormEvent) {
     e.preventDefault();
@@ -197,29 +192,37 @@ export default function Dashboard() {
     }
 
     try {
-      const { data, error } = await supabase
+      const { error } = await supabase
         .from('pacientes')
         .insert([
           { 
             nome: nomePaciente, 
             cpf: cpfPaciente || null, 
-            telefone: telPaciente || null 
+            telefone: telPaciente || null,
+            data_nascimento: dataNascimento || null,
+            peso: peso ? parseFloat(peso) : null,
+            altura: altura ? parseFloat(altura) : null,
+            endereco: endereco || null,
+            observacoes: observacoes || null
           }
-        ])
-        .select();
+        ]);
 
       if (error) {
         alert(`Erro ao cadastrar paciente: ${error.message}`);
-        console.error('Erro Supabase:', error);
       } else {
         alert('Paciente cadastrado com sucesso!');
         setNomePaciente('');
         setCpfPaciente('');
         setTelPaciente('');
+        setDataNascimento('');
+        setPeso('');
+        setAltura('');
+        setEndereco('');
+        setObservacoes('');
         fetchPacientes();
       }
     } catch (err) {
-      console.error('Erro de rede/execução:', err);
+      console.error('Erro:', err);
       alert('Erro inesperado ao cadastrar paciente.');
     }
   }
@@ -227,6 +230,19 @@ export default function Dashboard() {
   async function openFichaPaciente(p: Paciente) {
     setSelectedPaciente(p);
     fetchConsumos(p.id);
+  }
+
+  // Função para calcular a idade
+  function calcularIdade(dataNascimentoStr?: string) {
+    if (!dataNascimentoStr) return 'Não informada';
+    const nascimento = new Date(dataNascimentoStr);
+    const hoje = new Date();
+    let idade = hoje.getFullYear() - nascimento.getFullYear();
+    const m = hoje.getMonth() - nascimento.getMonth();
+    if (m < 0 || (m === 0 && hoje.getDate() < nascimento.getDate())) {
+      idade--;
+    }
+    return `${idade} anos`;
   }
 
   // APLICAR ITEM DE ESTOQUE NO PACIENTE (BAIXA AUTOMÁTICA)
@@ -248,7 +264,7 @@ export default function Dashboard() {
     const novaQtd = produto.quantidade - qtd;
     await supabase.from('produtos').update({ quantidade: novaQtd }).eq('id', produto.id);
 
-    // 2. Registrar no histórico geral de movimentações
+    // 2. Registrar no histórico geral
     await registrarMovimentacao(produto.id, `${produto.nome} (Paciente: ${selectedPaciente.nome})`, 'SAIDA', qtd);
 
     // 3. Registrar na ficha do paciente
@@ -374,7 +390,6 @@ export default function Dashboard() {
                         <td className="py-3 px-2 text-center space-x-1">
                           <button onClick={() => handleEntrada(p)} className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold">+ Repor</button>
                           <button onClick={() => handleBaixa(p)} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-semibold">- Baixa</button>
-                          <button onClick={() => setEditingProduct(p)} className="bg-slate-600 text-white px-2 py-1 rounded text-xs">✏️</button>
                           <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-600 text-white px-2 py-1 rounded text-xs">🗑️</button>
                         </td>
                       </tr>
@@ -396,17 +411,46 @@ export default function Dashboard() {
                 <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Paciente</h2>
                 <form onSubmit={handleAddPaciente} className="space-y-3">
                   <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo</label>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo *</label>
                     <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ex: Maria Silva" required />
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">CPF</label>
-                    <input type="text" value={cpfPaciente} onChange={(e) => setCpfPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="000.000.000-00" />
+                  
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">CPF</label>
+                      <input type="text" value={cpfPaciente} onChange={(e) => setCpfPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="000.000.000-00" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone</label>
+                      <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="(00) 90000-0000" />
+                    </div>
                   </div>
-                  <div>
-                    <label className="block text-xs font-semibold text-slate-600 mb-1">Telefone</label>
-                    <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="(00) 90000-0000" />
+
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Nascimento</label>
+                      <input type="date" value={dataNascimento} onChange={(e) => setDataNascimento(e.target.value)} className="w-full px-2 py-2 border rounded-lg text-xs" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Peso (kg)</label>
+                      <input type="number" step="0.1" value={peso} onChange={(e) => setPeso(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="70.5" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">Altura (m)</label>
+                      <input type="number" step="0.01" value={altura} onChange={(e) => setAltura(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="1.75" />
+                    </div>
                   </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Endereço</label>
+                    <input type="text" value={endereco} onChange={(e) => setEndereco(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Rua, número, bairro..." />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-1">Descrição / Histórico do Paciente</label>
+                    <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm outline-none" placeholder="Alergias, observações médicas, preferências..."></textarea>
+                  </div>
+
                   <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition-colors">Cadastrar Paciente</button>
                 </form>
               </div>
@@ -422,7 +466,7 @@ export default function Dashboard() {
                     >
                       <div>
                         <p className="font-semibold text-slate-800 text-sm">{p.nome}</p>
-                        <p className="text-xs text-slate-500">{p.cpf || 'Sem CPF'} • {p.telefone || 'Sem Tel'}</p>
+                        <p className="text-xs text-slate-500">{p.cpf || 'Sem CPF'} • {calcularIdade(p.data_nascimento)}</p>
                       </div>
                       <span className="text-xs text-blue-600 font-bold">Ver Ficha →</span>
                     </div>
@@ -436,10 +480,49 @@ export default function Dashboard() {
               {selectedPaciente ? (
                 <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
                   
+                  {/* CABEÇALHO COM DADOS DO PACIENTE */}
                   <div className="border-b pb-4">
-                    <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Ficha Prontuário</span>
-                    <h2 className="text-2xl font-bold text-slate-800 mt-1">{selectedPaciente.nome}</h2>
-                    <p className="text-sm text-slate-500">CPF: {selectedPaciente.cpf || 'Não informado'} | Tel: {selectedPaciente.telefone || 'Não informado'}</p>
+                    <div className="flex justify-between items-start">
+                      <div>
+                        <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Ficha Médica</span>
+                        <h2 className="text-2xl font-bold text-slate-800 mt-1">{selectedPaciente.nome}</h2>
+                      </div>
+                      <div className="text-right bg-slate-50 p-2 rounded-lg border text-xs">
+                        <span className="text-slate-500 block">Idade</span>
+                        <span className="font-bold text-slate-800 text-sm">{calcularIdade(selectedPaciente.data_nascimento)}</span>
+                      </div>
+                    </div>
+
+                    {/* CARTÕES DE DETALHES DO PACIENTE */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
+                      <div className="bg-slate-50 p-2.5 rounded-lg border">
+                        <span className="text-slate-400 block font-semibold">CPF</span>
+                        <span className="font-medium text-slate-700">{selectedPaciente.cpf || '-'}</span>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 rounded-lg border">
+                        <span className="text-slate-400 block font-semibold">Telefone</span>
+                        <span className="font-medium text-slate-700">{selectedPaciente.telefone || '-'}</span>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 rounded-lg border">
+                        <span className="text-slate-400 block font-semibold">Peso / Altura</span>
+                        <span className="font-medium text-slate-700">{selectedPaciente.peso ? `${selectedPaciente.peso} kg` : '-'} / {selectedPaciente.altura ? `${selectedPaciente.altura} m` : '-'}</span>
+                      </div>
+                      <div className="bg-slate-50 p-2.5 rounded-lg border">
+                        <span className="text-slate-400 block font-semibold">Nascimento</span>
+                        <span className="font-medium text-slate-700">{selectedPaciente.data_nascimento ? new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</span>
+                      </div>
+                    </div>
+
+                    {selectedPaciente.endereco && (
+                      <p className="text-xs text-slate-600 mt-3">📍 <strong>Endereço:</strong> {selectedPaciente.endereco}</p>
+                    )}
+
+                    {selectedPaciente.observacoes && (
+                      <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
+                        <strong>📝 Observações / Histórico:</strong>
+                        <p className="mt-1 whitespace-pre-wrap">{selectedPaciente.observacoes}</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* FORMULÁRIO DE LANÇAMENTO DE MATERIAL/MEDICAÇÃO */}
@@ -514,7 +597,7 @@ export default function Dashboard() {
                 </div>
               ) : (
                 <div className="bg-white p-12 rounded-xl shadow-sm border border-slate-200 text-center text-slate-400">
-                  👈 Selecione um paciente na lista ao lado para abrir a ficha e lançar materiais.
+                  👈 Selecione um paciente na lista ao lado para abrir a ficha completa e lançar materiais.
                 </div>
               )}
             </div>
