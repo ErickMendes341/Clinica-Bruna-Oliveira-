@@ -66,10 +66,10 @@ export default function Dashboard() {
   const [quantidade, setQuantidade] = useState('');
   const [preco, setPreco] = useState('');
   const [validade, setValidade] = useState('');
-  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  // Estados de Pacientes (Campos Expandidos)
+  // Estados de Pacientes
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
+  const [editingPacienteId, setEditingPacienteId] = useState<string | null>(null);
   const [nomePaciente, setNomePaciente] = useState('');
   const [cpfPaciente, setCpfPaciente] = useState('');
   const [telPaciente, setTelPaciente] = useState('');
@@ -184,46 +184,120 @@ export default function Dashboard() {
   }
 
   // --- PACIENTES HANDLERS ---
-  async function handleAddPaciente(e: React.FormEvent) {
+  function limpaFormularioPaciente() {
+    setEditingPacienteId(null);
+    setNomePaciente('');
+    setCpfPaciente('');
+    setTelPaciente('');
+    setDataNascimento('');
+    setPeso('');
+    setAltura('');
+    setEndereco('');
+    setObservacoes('');
+  }
+
+  function handlePrepareEditPaciente(p: Paciente, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    setEditingPacienteId(p.id);
+    setNomePaciente(p.nome || '');
+    setCpfPaciente(p.cpf || '');
+    setTelPaciente(p.telefone || '');
+    setDataNascimento(p.data_nascimento || '');
+    setPeso(p.peso ? String(p.peso) : '');
+    setAltura(p.altura ? String(p.altura) : '');
+    setEndereco(p.endereco || '');
+    setObservacoes(p.observacoes || '');
+  }
+
+  async function handleSavePaciente(e: React.FormEvent) {
     e.preventDefault();
     if (!nomePaciente.trim()) {
       alert('Informe o nome do paciente!');
       return;
     }
 
-    try {
-      const { error } = await supabase
-        .from('pacientes')
-        .insert([
-          { 
-            nome: nomePaciente, 
-            cpf: cpfPaciente || null, 
-            telefone: telPaciente || null,
-            data_nascimento: dataNascimento || null,
-            peso: peso ? parseFloat(peso) : null,
-            altura: altura ? parseFloat(altura) : null,
-            endereco: endereco || null,
-            observacoes: observacoes || null
-          }
-        ]);
+    let alturaParsed: number | null = null;
+    if (altura) {
+      const val = parseFloat(String(altura).replace(',', '.'));
+      alturaParsed = val > 3 ? val / 100 : val;
+    }
 
-      if (error) {
-        alert(`Erro ao cadastrar paciente: ${error.message}`);
+    let pesoParsed: number | null = null;
+    if (peso) {
+      pesoParsed = parseFloat(String(peso).replace(',', '.'));
+    }
+
+    const payload = {
+      nome: nomePaciente, 
+      cpf: cpfPaciente || null, 
+      telefone: telPaciente || null,
+      data_nascimento: dataNascimento || null,
+      peso: pesoParsed,
+      altura: alturaParsed,
+      endereco: endereco || null,
+      observacoes: observacoes || null
+    };
+
+    try {
+      if (editingPacienteId) {
+        // Atualizar Paciente Existente
+        const { error } = await supabase
+          .from('pacientes')
+          .update(payload)
+          .eq('id', editingPacienteId);
+
+        if (error) {
+          alert(`Erro ao atualizar paciente: ${error.message}`);
+        } else {
+          alert('Paciente atualizado com sucesso!');
+          if (selectedPaciente?.id === editingPacienteId) {
+            setSelectedPaciente({ id: editingPacienteId, ...payload } as Paciente);
+          }
+          limpaFormularioPaciente();
+          fetchPacientes();
+        }
       } else {
-        alert('Paciente cadastrado com sucesso!');
-        setNomePaciente('');
-        setCpfPaciente('');
-        setTelPaciente('');
-        setDataNascimento('');
-        setPeso('');
-        setAltura('');
-        setEndereco('');
-        setObservacoes('');
-        fetchPacientes();
+        // Cadastrar Novo Paciente
+        const { error } = await supabase
+          .from('pacientes')
+          .insert([payload]);
+
+        if (error) {
+          alert(`Erro ao cadastrar paciente: ${error.message}`);
+        } else {
+          alert('Paciente cadastrado com sucesso!');
+          limpaFormularioPaciente();
+          fetchPacientes();
+        }
       }
     } catch (err) {
       console.error('Erro:', err);
-      alert('Erro inesperado ao cadastrar paciente.');
+      alert('Erro inesperado ao salvar paciente.');
+    }
+  }
+
+  async function handleDeletePaciente(p: Paciente, e?: React.MouseEvent) {
+    if (e) e.stopPropagation();
+    if (!confirm(`Tem certeza que deseja excluir o paciente "${p.nome}"? Todo o histórico dele será excluído.`)) return;
+
+    // Primeiro excluir os consumos atrelados ao paciente
+    await supabase.from('consumos_paciente').delete().eq('paciente_id', p.id);
+
+    // Depois excluir o paciente
+    const { error } = await supabase.from('pacientes').delete().eq('id', p.id);
+
+    if (error) {
+      alert(`Erro ao excluir paciente: ${error.message}`);
+    } else {
+      alert('Paciente excluído com sucesso!');
+      if (selectedPaciente?.id === p.id) {
+        setSelectedPaciente(null);
+        setConsumos([]);
+      }
+      if (editingPacienteId === p.id) {
+        limpaFormularioPaciente();
+      }
+      fetchPacientes();
     }
   }
 
@@ -232,7 +306,6 @@ export default function Dashboard() {
     fetchConsumos(p.id);
   }
 
-  // Função para calcular a idade
   function calcularIdade(dataNascimentoStr?: string) {
     if (!dataNascimentoStr) return 'Não informada';
     const nascimento = new Date(dataNascimentoStr);
@@ -408,8 +481,22 @@ export default function Dashboard() {
             {/* CADASTRO E LISTA DE PACIENTES */}
             <div className="space-y-6">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Paciente</h2>
-                <form onSubmit={handleAddPaciente} className="space-y-3">
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-xl font-semibold text-slate-800">
+                    {editingPacienteId ? 'Editar Paciente' : 'Cadastrar Paciente'}
+                  </h2>
+                  {editingPacienteId && (
+                    <button
+                      type="button"
+                      onClick={limpaFormularioPaciente}
+                      className="text-xs text-slate-500 underline hover:text-slate-800"
+                    >
+                      Cancelar
+                    </button>
+                  )}
+                </div>
+
+                <form onSubmit={handleSavePaciente} className="space-y-3">
                   <div>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">Nome Completo *</label>
                     <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="Ex: Maria Silva" required />
@@ -433,11 +520,11 @@ export default function Dashboard() {
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Peso (kg)</label>
-                      <input type="number" step="0.1" value={peso} onChange={(e) => setPeso(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="70.5" />
+                      <input type="text" value={peso} onChange={(e) => setPeso(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="70" />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-slate-600 mb-1">Altura (m)</label>
-                      <input type="number" step="0.01" value={altura} onChange={(e) => setAltura(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="1.75" />
+                      <input type="text" value={altura} onChange={(e) => setAltura(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm" placeholder="1.68 ou 168" />
                     </div>
                   </div>
 
@@ -451,7 +538,12 @@ export default function Dashboard() {
                     <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border rounded-lg text-sm outline-none" placeholder="Alergias, observações médicas, preferências..."></textarea>
                   </div>
 
-                  <button type="submit" className="w-full bg-blue-600 hover:bg-blue-700 text-white font-medium py-2 rounded-lg text-sm transition-colors">Cadastrar Paciente</button>
+                  <button
+                    type="submit"
+                    className={`w-full text-white font-medium py-2 rounded-lg text-sm transition-colors ${editingPacienteId ? 'bg-amber-600 hover:bg-amber-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+                  >
+                    {editingPacienteId ? 'Salvar Alterações' : 'Cadastrar Paciente'}
+                  </button>
                 </form>
               </div>
 
@@ -468,7 +560,22 @@ export default function Dashboard() {
                         <p className="font-semibold text-slate-800 text-sm">{p.nome}</p>
                         <p className="text-xs text-slate-500">{p.cpf || 'Sem CPF'} • {calcularIdade(p.data_nascimento)}</p>
                       </div>
-                      <span className="text-xs text-blue-600 font-bold">Ver Ficha →</span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          title="Editar Paciente"
+                          onClick={(e) => handlePrepareEditPaciente(p, e)}
+                          className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold px-2 py-1 rounded"
+                        >
+                          ✏️ Editar
+                        </button>
+                        <button
+                          title="Excluir Paciente"
+                          onClick={(e) => handleDeletePaciente(p, e)}
+                          className="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-2 py-1 rounded"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>
@@ -487,9 +594,23 @@ export default function Dashboard() {
                         <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Ficha Médica</span>
                         <h2 className="text-2xl font-bold text-slate-800 mt-1">{selectedPaciente.nome}</h2>
                       </div>
-                      <div className="text-right bg-slate-50 p-2 rounded-lg border text-xs">
-                        <span className="text-slate-500 block">Idade</span>
-                        <span className="font-bold text-slate-800 text-sm">{calcularIdade(selectedPaciente.data_nascimento)}</span>
+                      <div className="flex items-center space-x-2">
+                        <button
+                          onClick={() => handlePrepareEditPaciente(selectedPaciente)}
+                          className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          ✏️ Editar Cadastro
+                        </button>
+                        <button
+                          onClick={() => handleDeletePaciente(selectedPaciente)}
+                          className="text-xs bg-red-600 hover:bg-red-700 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          🗑️ Excluir
+                        </button>
+                        <div className="text-right bg-slate-50 p-2 rounded-lg border text-xs ml-2">
+                          <span className="text-slate-500 block">Idade</span>
+                          <span className="font-bold text-slate-800 text-sm">{calcularIdade(selectedPaciente.data_nascimento)}</span>
+                        </div>
                       </div>
                     </div>
 
