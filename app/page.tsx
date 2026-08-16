@@ -70,6 +70,7 @@ export default function Dashboard() {
   // Estados de Pacientes
   const [pacientes, setPacientes] = useState<Paciente[]>([]);
   const [editingPacienteId, setEditingPacienteId] = useState<string | null>(null);
+  const [searchPaciente, setSearchPaciente] = useState(''); // Busca por Nome/CPF
   const [nomePaciente, setNomePaciente] = useState('');
   const [cpfPaciente, setCpfPaciente] = useState('');
   const [telPaciente, setTelPaciente] = useState('');
@@ -177,22 +178,18 @@ export default function Dashboard() {
     fetchData();
   }
 
-  // EXCLUSÃO DE PRODUTO
   async function handleDeleteProduct(id: string, nome: string) {
     if (!confirm(`Tem certeza que deseja excluir "${nome}"? Todo o histórico deste item também será removido.`)) return;
 
     try {
-      // 1. Apaga histórico de movimentações e consumos primeiro
       await supabase.from('historico_movimentacoes').delete().eq('produto_id', id);
       await supabase.from('consumos_paciente').delete().eq('produto_id', id);
 
-      // 2. Apaga o produto em si
       const { error } = await supabase.from('produtos').delete().eq('id', id);
 
       if (error) {
         alert(`Erro ao excluir produto: ${error.message}`);
       } else {
-        // Atualiza a lista na tela imediatamente
         setProducts(prev => prev.filter(item => item.id !== id));
         alert('Produto excluído com sucesso!');
         fetchData();
@@ -369,14 +366,23 @@ export default function Dashboard() {
     return matchesTab && matchesSearch;
   });
 
+  // Filtro de Pacientes por Nome ou CPF (Remove pontuação para facilitar a busca de CPF)
+  const filteredPacientes = pacientes.filter((p) => {
+    const cleanSearch = searchPaciente.replace(/\D/g, '').toLowerCase();
+    const cleanCPF = (p.cpf || '').replace(/\D/g, '').toLowerCase();
+    const matchCPF = cleanSearch !== '' && cleanCPF.includes(cleanSearch);
+    const matchNome = p.nome.toLowerCase().includes(searchPaciente.toLowerCase());
+    return matchNome || matchCPF;
+  });
+
   if (!mounted) return null;
 
   return (
     <div className="min-h-screen bg-slate-50 p-4 md:p-8 font-sans">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* NAVEGAÇÃO PRINCIPAL */}
-        <div className="flex items-center justify-between border-b pb-4">
+        {/* NAVEGAÇÃO PRINCIPAL (Oculta na impressão) */}
+        <div className="flex items-center justify-between border-b pb-4 print:hidden">
           <div>
             <h1 className="text-3xl font-bold text-slate-800">Clínica Médica</h1>
             <p className="text-slate-500">Gestão de Estoque e Ficha do Paciente</p>
@@ -400,7 +406,6 @@ export default function Dashboard() {
         {/* VIEW: CONTROLE DE ESTOQUE */}
         {mainTab === 'estoque' && (
           <>
-            {/* FORMULÁRIO DE CADASTRO DE PRODUTO */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
               <h2 className="text-xl font-semibold text-slate-800 mb-4">Cadastrar Novo Item</h2>
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
@@ -438,7 +443,6 @@ export default function Dashboard() {
               </form>
             </div>
 
-            {/* TABELA DE ESTOQUE */}
             <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-4">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b pb-4">
                 <div className="flex space-x-1 bg-slate-100 p-1 rounded-lg">
@@ -489,8 +493,8 @@ export default function Dashboard() {
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* CADASTRO E LISTA DE PACIENTES */}
-            <div className="space-y-6">
+            {/* COLUNA DA ESQUERDA: CADASTRO E LISTA (Ocultos na impressão) */}
+            <div className="space-y-6 print:hidden">
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-xl font-semibold text-slate-800">
@@ -558,59 +562,84 @@ export default function Dashboard() {
                 </form>
               </div>
 
+              {/* LISTA DE PACIENTES COM BUSCA POR NOME E CPF */}
               <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
                 <h2 className="text-lg font-semibold text-slate-800 mb-3">Lista de Pacientes</h2>
+                
+                {/* CAMPO DE BUSCA */}
+                <div className="mb-3">
+                  <input
+                    type="text"
+                    placeholder="🔍 Buscar por Nome ou CPF..."
+                    value={searchPaciente}
+                    onChange={(e) => setSearchPaciente(e.target.value)}
+                    className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
                 <div className="divide-y max-h-80 overflow-y-auto">
-                  {pacientes.map((p) => (
-                    <div
-                      key={p.id}
-                      onClick={() => openFichaPaciente(p)}
-                      className={`p-3 cursor-pointer rounded-lg transition-colors flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-slate-50'}`}
-                    >
-                      <div>
-                        <p className="font-semibold text-slate-800 text-sm">{p.nome}</p>
-                        <p className="text-xs text-slate-500">{p.cpf || 'Sem CPF'} • {calcularIdade(p.data_nascimento)}</p>
+                  {filteredPacientes.length === 0 ? (
+                    <p className="text-xs text-slate-400 py-4 text-center">Nenhum paciente encontrado.</p>
+                  ) : (
+                    filteredPacientes.map((p) => (
+                      <div
+                        key={p.id}
+                        onClick={() => openFichaPaciente(p)}
+                        className={`p-3 cursor-pointer rounded-lg transition-colors flex items-center justify-between ${selectedPaciente?.id === p.id ? 'bg-blue-50 border-l-4 border-blue-600' : 'hover:bg-slate-50'}`}
+                      >
+                        <div>
+                          <p className="font-semibold text-slate-800 text-sm">{p.nome}</p>
+                          <p className="text-xs text-slate-500">CPF: {p.cpf || 'Não informado'} • {calcularIdade(p.data_nascimento)}</p>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <button
+                            title="Editar Paciente"
+                            onClick={(e) => handlePrepareEditPaciente(p, e)}
+                            className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold px-2 py-1 rounded"
+                          >
+                            ✏️
+                          </button>
+                          <button
+                            title="Excluir Paciente"
+                            onClick={(e) => handleDeletePaciente(p, e)}
+                            className="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-2 py-1 rounded"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <button
-                          title="Editar Paciente"
-                          onClick={(e) => handlePrepareEditPaciente(p, e)}
-                          className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-800 font-semibold px-2 py-1 rounded"
-                        >
-                          ✏️ Editar
-                        </button>
-                        <button
-                          title="Excluir Paciente"
-                          onClick={(e) => handleDeletePaciente(p, e)}
-                          className="text-xs bg-red-100 hover:bg-red-200 text-red-700 font-semibold px-2 py-1 rounded"
-                        >
-                          🗑️
-                        </button>
-                      </div>
-                    </div>
-                  ))}
+                    ))
+                  )}
                 </div>
               </div>
             </div>
 
-            {/* FICHA DO PACIENTE SELECIONADO */}
-            <div className="lg:col-span-2">
+            {/* FICHA DO PACIENTE SELECIONADO (Ocupa a página na Impressão) */}
+            <div className="lg:col-span-2 print:w-full print:col-span-3">
               {selectedPaciente ? (
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6">
+                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200 space-y-6 print:border-none print:shadow-none print:p-0">
                   
-                  {/* CABEÇALHO COM DADOS DO PACIENTE */}
+                  {/* CABEÇALHO DA FICHA */}
                   <div className="border-b pb-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded">Ficha Médica</span>
+                        <span className="text-xs font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded print:hidden">Ficha Médica</span>
                         <h2 className="text-2xl font-bold text-slate-800 mt-1">{selectedPaciente.nome}</h2>
                       </div>
-                      <div className="flex items-center space-x-2">
+                      
+                      {/* BOTAO IMPRIMIR E DEMAIS ACOES */}
+                      <div className="flex items-center space-x-2 print:hidden">
+                        <button
+                          onClick={() => window.print()}
+                          className="text-xs bg-slate-800 hover:bg-slate-900 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1 shadow"
+                        >
+                          🖨️ Imprimir Ficha
+                        </button>
                         <button
                           onClick={() => handlePrepareEditPaciente(selectedPaciente)}
                           className="text-xs bg-amber-500 hover:bg-amber-600 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
                         >
-                          ✏️ Editar Cadastro
+                          ✏️ Editar
                         </button>
                         <button
                           onClick={() => handleDeletePaciente(selectedPaciente)}
@@ -618,14 +647,10 @@ export default function Dashboard() {
                         >
                           🗑️ Excluir
                         </button>
-                        <div className="text-right bg-slate-50 p-2 rounded-lg border text-xs ml-2">
-                          <span className="text-slate-500 block">Idade</span>
-                          <span className="font-bold text-slate-800 text-sm">{calcularIdade(selectedPaciente.data_nascimento)}</span>
-                        </div>
                       </div>
                     </div>
 
-                    {/* CARTÕES DE DETALHES DO PACIENTE */}
+                    {/* CARTÕES DE DETALHES */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
                       <div className="bg-slate-50 p-2.5 rounded-lg border">
                         <span className="text-slate-400 block font-semibold">CPF</span>
@@ -640,8 +665,8 @@ export default function Dashboard() {
                         <span className="font-medium text-slate-700">{selectedPaciente.peso ? `${selectedPaciente.peso} kg` : '-'} / {selectedPaciente.altura ? `${selectedPaciente.altura} m` : '-'}</span>
                       </div>
                       <div className="bg-slate-50 p-2.5 rounded-lg border">
-                        <span className="text-slate-400 block font-semibold">Nascimento</span>
-                        <span className="font-medium text-slate-700">{selectedPaciente.data_nascimento ? new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</span>
+                        <span className="text-slate-400 block font-semibold">Idade / Nascimento</span>
+                        <span className="font-medium text-slate-700">{calcularIdade(selectedPaciente.data_nascimento)} {selectedPaciente.data_nascimento ? `(${new Date(selectedPaciente.data_nascimento).toLocaleDateString('pt-BR', { timeZone: 'UTC' })})` : ''}</span>
                       </div>
                     </div>
 
@@ -651,14 +676,14 @@ export default function Dashboard() {
 
                     {selectedPaciente.observacoes && (
                       <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900">
-                        <strong>📝 Observações / Histórico:</strong>
+                        <strong>📝 Observações / Histórico Médico:</strong>
                         <p className="mt-1 whitespace-pre-wrap">{selectedPaciente.observacoes}</p>
                       </div>
                     )}
                   </div>
 
-                  {/* FORMULÁRIO DE LANÇAMENTO DE MATERIAL/MEDICAÇÃO */}
-                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  {/* FORMULÁRIO DE LANÇAMENTO (Oculto na impressão) */}
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 print:hidden">
                     <h3 className="font-semibold text-slate-800 text-sm mb-3">💉 Aplicar Item de Estoque no Paciente</h3>
                     <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3">
                       <div className="flex-1">
