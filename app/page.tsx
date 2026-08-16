@@ -177,28 +177,29 @@ export default function Dashboard() {
     fetchData();
   }
 
+  // EXCLUSÃO DE PRODUTO
   async function handleDeleteProduct(id: string, nome: string) {
     if (!confirm(`Tem certeza que deseja excluir "${nome}"? Todo o histórico deste item também será removido.`)) return;
 
     try {
-      // 1. Apaga o histórico de movimentações atrelado ao produto
+      // 1. Apaga histórico de movimentações e consumos primeiro
       await supabase.from('historico_movimentacoes').delete().eq('produto_id', id);
-
-      // 2. Apaga os consumos de pacientes vinculados a este produto
       await supabase.from('consumos_paciente').delete().eq('produto_id', id);
 
-      // 3. Exclui o produto do estoque
+      // 2. Apaga o produto em si
       const { error } = await supabase.from('produtos').delete().eq('id', id);
 
       if (error) {
         alert(`Erro ao excluir produto: ${error.message}`);
       } else {
+        // Atualiza a lista na tela imediatamente
+        setProducts(prev => prev.filter(item => item.id !== id));
         alert('Produto excluído com sucesso!');
         fetchData();
       }
     } catch (err) {
       console.error('Erro ao excluir produto:', err);
-      alert('Ocorreu um erro ao excluir o produto.');
+      alert('Ocorreu um erro ao tentar excluir o produto.');
     }
   }
 
@@ -259,7 +260,6 @@ export default function Dashboard() {
 
     try {
       if (editingPacienteId) {
-        // Atualizar Paciente Existente
         const { error } = await supabase
           .from('pacientes')
           .update(payload)
@@ -276,7 +276,6 @@ export default function Dashboard() {
           fetchPacientes();
         }
       } else {
-        // Cadastrar Novo Paciente
         const { error } = await supabase
           .from('pacientes')
           .insert([payload]);
@@ -299,10 +298,7 @@ export default function Dashboard() {
     if (e) e.stopPropagation();
     if (!confirm(`Tem certeza que deseja excluir o paciente "${p.nome}"? Todo o histórico dele será excluído.`)) return;
 
-    // Primeiro excluir os consumos atrelados ao paciente
     await supabase.from('consumos_paciente').delete().eq('paciente_id', p.id);
-
-    // Depois excluir o paciente
     const { error } = await supabase.from('pacientes').delete().eq('id', p.id);
 
     if (error) {
@@ -337,7 +333,6 @@ export default function Dashboard() {
     return `${idade} anos`;
   }
 
-  // APLICAR ITEM DE ESTOQUE NO PACIENTE (BAIXA AUTOMÁTICA)
   async function handleUsarItemNoPaciente(e: React.FormEvent) {
     e.preventDefault();
     if (!selectedPaciente || !selectedProdutoId) return alert('Selecione um item!');
@@ -352,14 +347,11 @@ export default function Dashboard() {
       return alert(`Estoque insuficiente! Disponível: ${produto.quantidade} un.`);
     }
 
-    // 1. Dar baixa no estoque
     const novaQtd = produto.quantidade - qtd;
     await supabase.from('produtos').update({ quantidade: novaQtd }).eq('id', produto.id);
 
-    // 2. Registrar no histórico geral
     await registrarMovimentacao(produto.id, `${produto.nome} (Paciente: ${selectedPaciente.nome})`, 'SAIDA', qtd);
 
-    // 3. Registrar na ficha do paciente
     await supabase.from('consumos_paciente').insert([
       { paciente_id: selectedPaciente.id, produto_id: produto.id, nome_produto: produto.nome, quantidade: qtd }
     ]);
@@ -482,7 +474,7 @@ export default function Dashboard() {
                         <td className="py-3 px-2 text-center space-x-1">
                           <button onClick={() => handleEntrada(p)} className="bg-emerald-600 text-white px-2 py-1 rounded text-xs font-semibold">+ Repor</button>
                           <button onClick={() => handleBaixa(p)} className="bg-amber-600 text-white px-2 py-1 rounded text-xs font-semibold">- Baixa</button>
-                          <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-600 text-white px-2 py-1 rounded text-xs">🗑️</button>
+                          <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-600 text-white px-2 py-1 rounded text-xs font-semibold">🗑️ Excluir</button>
                         </td>
                       </tr>
                     ))}
