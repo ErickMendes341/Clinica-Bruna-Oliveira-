@@ -178,9 +178,28 @@ export default function Dashboard() {
   }
 
   async function handleDeleteProduct(id: string, nome: string) {
-    if (!confirm(`Excluir "${nome}"?`)) return;
-    await supabase.from('produtos').delete().eq('id', id);
-    fetchData();
+    if (!confirm(`Tem certeza que deseja excluir "${nome}"? Todo o histórico deste item também será removido.`)) return;
+
+    try {
+      // 1. Apaga o histórico de movimentações atrelado ao produto
+      await supabase.from('historico_movimentacoes').delete().eq('produto_id', id);
+
+      // 2. Apaga os consumos de pacientes vinculados a este produto
+      await supabase.from('consumos_paciente').delete().eq('produto_id', id);
+
+      // 3. Exclui o produto do estoque
+      const { error } = await supabase.from('produtos').delete().eq('id', id);
+
+      if (error) {
+        alert(`Erro ao excluir produto: ${error.message}`);
+      } else {
+        alert('Produto excluído com sucesso!');
+        fetchData();
+      }
+    } catch (err) {
+      console.error('Erro ao excluir produto:', err);
+      alert('Ocorreu um erro ao excluir o produto.');
+    }
   }
 
   // --- PACIENTES HANDLERS ---
