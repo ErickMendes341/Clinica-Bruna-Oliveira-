@@ -352,27 +352,29 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* CABEÇALHO DA CLÍNICA & DORA. BRUNA OLIVEIRA */}
+        {/* CABEÇALHO DA CLÍNICA & DRA. BRUNA OLIVEIRA */}
         <header className="bg-white border border-amber-200/80 rounded-2xl shadow-sm p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-0"></div>
           
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
             
-            {/* LOGO & IDENTIDADE */}
-            <div className="flex items-center space-x-4">
-              <div className="w-20 h-20 rounded-full border-2 border-amber-500/40 p-1 bg-amber-50/50 flex items-center justify-center shadow-inner">
-                <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-600 to-amber-800 flex items-center justify-center text-white font-serif font-bold text-2xl shadow">
-                  BO
-                </div>
+            {/* LOGO OFICIAL & IDENTIDADE */}
+            <div className="flex items-center space-x-5">
+              <div className="w-20 h-20 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-md overflow-hidden flex-shrink-0">
+                <img
+                  src="/logo.jpeg"
+                  alt="Dra. Bruna Oliveira"
+                  className="w-full h-full object-cover rounded-full"
+                />
               </div>
               <div>
                 <h1 className="text-2xl md:text-3xl font-serif font-bold text-amber-950 tracking-tight">
                   Dra. Bruna Oliveira
                 </h1>
-                <p className="text-amber-800 text-sm font-medium tracking-wide uppercase">
-                  Medicina do Esporte & Performance
+                <p className="text-amber-800 text-xs md:text-sm font-semibold tracking-wider uppercase mt-0.5">
+                  Medicina do Esporte <span className="text-amber-600">•</span> CRM-MG 76958
                 </p>
-                <div className="flex items-center space-x-3 text-xs text-amber-900/70 mt-1">
+                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-900/70 mt-1.5">
                   <span>📍 Rua Juca Stockler, 2029 - Passos/MG</span>
                   <span>•</span>
                   <span>📞 (35) 99987-1770</span>
@@ -380,7 +382,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* BOTÕES DE NAVEGAÇÃO E WHATSAPP */}
+            {/* BOTÕES DE AÇÃO */}
             <div className="flex flex-col sm:flex-row items-center gap-3 print:hidden">
               <a
                 href="https://wa.me/5535999871770"
@@ -414,10 +416,10 @@ export default function Dashboard() {
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* COLUNA ESQUERDA: FORMULÁRIO E LISTA DE PACIENTES */}
+            {/* COLUNA ESQUERDA: CADASTRO E BUSCA */}
             <div className="space-y-6 print:hidden">
               
-              {/* FORMULÁRIO DE PACIENTE */}
+              {/* FORMULÁRIO */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-serif font-bold text-amber-950">
@@ -481,7 +483,7 @@ export default function Dashboard() {
                 </form>
               </div>
 
-              {/* LISTA DE PACIENTES COM BUSCA POR NOME OU CPF */}
+              {/* LISTA E FILTRO */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <h2 className="text-lg font-serif font-bold text-amber-950 mb-3">Buscar Paciente</h2>
                 
@@ -519,22 +521,23 @@ export default function Dashboard() {
 
             </div>
 
-            {/* PAINEL DA FICHA DO PACIENTE */}
+            {/* FICHA MÉDICA */}
             <div className="lg:col-span-2 print:w-full print:col-span-3">
               {selectedPaciente ? (
                 <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-amber-200/80 space-y-6 print:border-none print:shadow-none print:p-0">
                   
-                  {/* CABEÇALHO DA FICHA */}
+                  {/* CABEÇALHO TIMBRADO NA FICHA */}
                   <div className="border-b border-amber-100 pb-4">
                     <div className="flex justify-between items-start">
                       <div>
-                        <span className="text-[10px] uppercase tracking-wider font-bold bg-amber-100 text-amber-900 px-2.5 py-1 rounded-full print:hidden">
-                          Ficha Técnica do Paciente
-                        </span>
-                        <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950 mt-2">{selectedPaciente.nome}</h2>
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="text-[10px] uppercase tracking-wider font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full print:hidden">
+                            Ficha Técnica do Paciente
+                          </span>
+                        </div>
+                        <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950">{selectedPaciente.nome}</h2>
                       </div>
                       
-                      {/* BOTÕES DE AÇÃO */}
                       <div className="flex items-center space-x-2 print:hidden">
                         <button
                           onClick={() => window.print()}
@@ -548,7 +551,6 @@ export default function Dashboard() {
                       </div>
                     </div>
 
-                    {/* DADOS RESUMIDOS */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
                       <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
                         <span className="text-amber-800/70 block font-semibold">CPF</span>
@@ -580,7 +582,7 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* LANÇAMENTO DE ITENS NO PACIENTE */}
+                  {/* FORMULÁRIO DE PRESCRIÇÃO */}
                   <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">
                     <h3 className="font-serif font-semibold text-amber-950 text-sm mb-3">💉 Prescrever / Aplicar Item do Estoque</h3>
                     <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3">
@@ -618,7 +620,7 @@ export default function Dashboard() {
                     </form>
                   </div>
 
-                  {/* TABELA DE HISTÓRICO DE CONSUMO */}
+                  {/* TABELA DE CONSUMO */}
                   <div>
                     <h3 className="font-serif font-bold text-amber-950 text-base mb-3">📋 Medicamentos & Procedimentos Aplicados</h3>
                     <div className="border border-amber-200/80 rounded-xl overflow-hidden">
@@ -660,11 +662,9 @@ export default function Dashboard() {
           </div>
         )}
 
-        {/* VIEW: CONTROLE DE ESTOQUE */}
+        {/* VIEW: ESTOQUE */}
         {mainTab === 'estoque' && (
           <div className="space-y-6">
-            
-            {/* NOVO PRODUCTO */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
               <h2 className="text-lg font-serif font-bold text-amber-950 mb-4">Cadastrar Novo Produto / Insumo</h2>
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
@@ -704,7 +704,6 @@ export default function Dashboard() {
               </form>
             </div>
 
-            {/* LISTA DE ESTOQUE */}
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60 space-y-4">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-amber-100 pb-4">
                 <div className="flex space-x-1 bg-amber-50 p-1 rounded-xl border border-amber-200/50">
@@ -748,7 +747,6 @@ export default function Dashboard() {
                 </table>
               </div>
             </div>
-
           </div>
         )}
 
