@@ -60,7 +60,8 @@ export default function Dashboard() {
   const [activeTab, setActiveTab] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Cadastro de Produto
+  // Cadastro e Edição de Produto
+  const [editingProductId, setEditingProductId] = useState<string | null>(null);
   const [nome, setNome] = useState('');
   const [categoria, setCategoria] = useState('medicacao');
   const [lote, setLote] = useState('');
@@ -135,22 +136,59 @@ export default function Dashboard() {
   }
 
   // --- ESTOQUE HANDLERS ---
+  function limpaFormularioProduto() {
+    setEditingProductId(null);
+    setNome('');
+    setCategoria('medicacao');
+    setLote('');
+    setQuantidade('');
+    setPreco('');
+    setValidade('');
+  }
+
+  function handlePrepareEditProduct(p: Product) {
+    setEditingProductId(p.id);
+    setNome(p.nome || '');
+    setCategoria(p.categoria || 'medicacao');
+    setLote(p.lote || '');
+    setQuantidade(String(p.quantidade || 0));
+    setPreco(String(p.preco_custo || 0));
+    setValidade(p.validade || '');
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
     if (!nome || !quantidade || !preco) return alert('Preencha Nome, Quantidade e Preço!');
 
-    const { data, error } = await supabase.from('produtos').insert([
-      { nome, categoria, lote: lote || null, quantidade: parseInt(quantidade), quantidade_minima: 10, preco_custo: parseFloat(preco), validade: validade || null },
-    ]).select();
+    const payload = {
+      nome,
+      categoria,
+      lote: lote || null,
+      quantidade: parseInt(quantidade),
+      quantidade_minima: 10,
+      preco_custo: parseFloat(preco),
+      validade: validade || null,
+    };
 
-    if (error) {
-      alert(`Erro ao cadastrar produto: ${error.message}`);
-    } else {
-      if (data && data[0]) {
-        await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
+    if (editingProductId) {
+      const { error } = await supabase.from('produtos').update(payload).eq('id', editingProductId);
+      if (error) alert(`Erro ao atualizar produto: ${error.message}`);
+      else {
+        limpaFormularioProduto();
+        fetchData();
       }
-      setNome(''); setCategoria('medicacao'); setLote(''); setQuantidade(''); setPreco(''); setValidade('');
-      fetchData();
+    } else {
+      const { data, error } = await supabase.from('produtos').insert([payload]).select();
+      if (error) {
+        alert(`Erro ao cadastrar produto: ${error.message}`);
+      } else {
+        if (data && data[0]) {
+          await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
+        }
+        limpaFormularioProduto();
+        fetchData();
+      }
     }
   }
 
@@ -398,13 +436,12 @@ export default function Dashboard() {
     <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* CABEÇALHO DA CLÍNICA & DRA. BRUNA OLIVEIRA */}
+        {/* CABEÇALHO DA CLÍNICA */}
         <header className="bg-white border border-amber-200/80 rounded-2xl shadow-sm p-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-0"></div>
           
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
             
-            {/* LOGO OFICIAL & IDENTIDADE */}
             <div className="flex items-center space-x-5">
               <div className="w-20 h-20 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-md overflow-hidden flex-shrink-0">
                 <img
@@ -428,7 +465,6 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* BOTÕES DE AÇÃO */}
             <div className="flex flex-col sm:flex-row items-center gap-3 print:hidden">
               <a
                 href="https://wa.me/5535999871770"
@@ -463,9 +499,8 @@ export default function Dashboard() {
           </div>
         </header>
 
-        {/* BANNERS DE ALERTAS GERAIS */}
+        {/* ALERTAS GERAIS */}
         <div className="space-y-3 print:hidden">
-          {/* BANNER DE ANIVERSARIANTES */}
           {aniversariantesHoje.length > 0 && (
             <div className="bg-amber-100 border-l-4 border-amber-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
               <div className="flex items-center space-x-3">
@@ -493,13 +528,12 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* BANNER DE RETORNOS AMANHÃ */}
           {retornosAmanha.length > 0 && (
             <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
               <div className="flex items-center space-x-3">
                 <span className="text-2xl">🔔</span>
                 <div>
-                  <h4 className="font-serif font-bold text-blue-950 text-sm">Lembrete de Retorno Amannã ({retornosAmanha.length})</h4>
+                  <h4 className="font-serif font-bold text-blue-950 text-sm">Lembrete de Retorno Amanhã ({retornosAmanha.length})</h4>
                   <p className="text-xs text-blue-900">
                     {retornosAmanha.map(p => p.nome).join(', ')}
                   </p>
@@ -522,14 +556,11 @@ export default function Dashboard() {
           )}
         </div>
 
-        {/* VIEW: PACIENTES & FICHAS */}
+        {/* VIEW: PACIENTES */}
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            {/* COLUNA ESQUERDA: CADASTRO E BUSCA */}
             <div className="space-y-6 print:hidden">
-              
-              {/* FORMULÁRIO */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-serif font-bold text-amber-950">
@@ -598,7 +629,6 @@ export default function Dashboard() {
                 </form>
               </div>
 
-              {/* LISTA E FILTRO */}
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <h2 className="text-lg font-serif font-bold text-amber-950 mb-3">Buscar Paciente</h2>
                 
@@ -644,12 +674,10 @@ export default function Dashboard() {
 
             </div>
 
-            {/* FICHA MÉDICA */}
             <div className="lg:col-span-2 print:w-full print:col-span-3">
               {selectedPaciente ? (
                 <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-amber-200/80 space-y-6 print:border-none print:shadow-none print:p-0">
                   
-                  {/* CABEÇALHO TIMBRADO NA FICHA */}
                   <div className="border-b border-amber-100 pb-4">
                     <div className="flex justify-between items-start">
                       <div>
@@ -727,7 +755,6 @@ export default function Dashboard() {
                     )}
                   </div>
 
-                  {/* FORMULÁRIO DE PRESCRIÇÃO */}
                   <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">
                     <h3 className="font-serif font-semibold text-amber-950 text-sm mb-3">💉 Prescrever / Aplicar Item do Estoque</h3>
                     <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3">
@@ -765,7 +792,6 @@ export default function Dashboard() {
                     </form>
                   </div>
 
-                  {/* TABELA DE CONSUMO */}
                   <div>
                     <h3 className="font-serif font-bold text-amber-950 text-base mb-3">📋 Medicamentos & Procedimentos Aplicados</h3>
                     <div className="border border-amber-200/80 rounded-xl overflow-hidden">
@@ -811,7 +837,6 @@ export default function Dashboard() {
         {mainTab === 'estoque' && (
           <div className="space-y-6">
             
-            {/* PAINEL DE AVISO DE ESTOQUE CRÍTICO */}
             {produtosEstoqueBaixo.length > 0 && (
               <div className="bg-red-50 border-l-4 border-red-600 p-4 rounded-xl flex items-center justify-between shadow-sm">
                 <div className="flex items-center space-x-3">
@@ -827,11 +852,20 @@ export default function Dashboard() {
             )}
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
-              <h2 className="text-lg font-serif font-bold text-amber-950 mb-4">Cadastrar Novo Produto / Insumo</h2>
+              <div className="flex justify-between items-center mb-4">
+                <h2 className="text-lg font-serif font-bold text-amber-950">
+                  {editingProductId ? 'Editar Item do Estoque' : 'Cadastrar Novo Produto / Insumo'}
+                </h2>
+                {editingProductId && (
+                  <button onClick={limpaFormularioProduto} className="text-xs text-amber-700 hover:underline">
+                    Cancelar
+                  </button>
+                )}
+              </div>
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
                 <div className="lg:col-span-2">
-                  <label className="block text-xs font-semibold text-amber-900 mb-1">Nome do Item</label>
-                  <input type="text" placeholder="Ex: Vitamina D3..." value={nome} onChange={(e) => setNome(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Nome do Item *</label>
+                  <input type="text" placeholder="Ex: Vitamina D3..." value={nome} onChange={(e) => setNome(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Categoria</label>
@@ -843,15 +877,15 @@ export default function Dashboard() {
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Nº do Lote</label>
-                  <input type="text" placeholder="L1234" value={lote} onChange={(e) => setLote(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                  <input type="text" placeholder="Ex: L1234" value={lote} onChange={(e) => setLote(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. Inicial</label>
-                  <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. *</label>
+                  <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
                 </div>
                 <div>
-                  <label className="block text-xs font-semibold text-amber-900 mb-1">Preço Custo (R$)</label>
-                  <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                  <label className="block text-xs font-semibold text-amber-900 mb-1">Preço Custo (R$) *</label>
+                  <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
                 </div>
                 <div>
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Validade</label>
@@ -859,7 +893,7 @@ export default function Dashboard() {
                 </div>
                 <div className="lg:col-span-7 flex justify-end">
                   <button type="submit" className="bg-amber-800 hover:bg-amber-900 text-white font-medium py-2 px-6 rounded-xl text-sm transition-all shadow">
-                    Cadastrar no Estoque
+                    {editingProductId ? 'Atualizar Produto' : 'Cadastrar no Estoque'}
                   </button>
                 </div>
               </form>
@@ -874,7 +908,7 @@ export default function Dashboard() {
                     </button>
                   ))}
                 </div>
-                <input type="text" placeholder="🔍 Pesquisar no estoque..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
+                <input type="text" placeholder="🔍 Pesquisar por nome ou lote..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
               </div>
 
               <div className="overflow-x-auto">
@@ -883,6 +917,7 @@ export default function Dashboard() {
                     <tr>
                       <th className="py-3 px-3">Item</th>
                       <th className="py-3 px-3">Categoria</th>
+                      <th className="py-3 px-3">Lote</th>
                       <th className="py-3 px-3">Qtd. Atual</th>
                       <th className="py-3 px-3">Preço Un.</th>
                       <th className="py-3 px-3">Validade</th>
@@ -905,15 +940,17 @@ export default function Dashboard() {
                             </div>
                           </td>
                           <td className="py-3 px-3 text-xs uppercase text-amber-800">{p.categoria}</td>
+                          <td className="py-3 px-3 text-xs font-mono text-amber-900">{p.lote || '-'}</td>
                           <td className={`py-3 px-3 font-bold ${isBaixo ? 'text-red-700' : 'text-amber-900'}`}>
                             {p.quantidade} un.
                           </td>
                           <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
                           <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
                           <td className="py-3 px-3 text-center space-x-1">
-                            <button onClick={() => handleEntrada(p)} className="bg-emerald-700 text-white px-2 py-1 rounded-md text-xs font-semibold">+ Entrada</button>
-                            <button onClick={() => handleBaixa(p)} className="bg-amber-700 text-white px-2 py-1 rounded-md text-xs font-semibold">- Baixa</button>
-                            <button onClick={() => handleDeleteProduct(p.id, p.nome)} className="bg-red-700 text-white px-2 py-1 rounded-md text-xs font-semibold">Excluir</button>
+                            <button onClick={() => handleEntrada(p)} title="Adicionar Entrada" className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">+</button>
+                            <button onClick={() => handleBaixa(p)} title="Dar Baixa" className="bg-amber-700 hover:bg-amber-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">-</button>
+                            <button onClick={() => handlePrepareEditProduct(p)} title="Editar Produto" className="bg-amber-100 text-amber-900 hover:bg-amber-200 px-2 py-1 rounded-md text-xs">✏️</button>
+                            <button onClick={() => handleDeleteProduct(p.id, p.nome)} title="Excluir Produto" className="bg-red-700 hover:bg-red-800 text-white px-2 py-1 rounded-md text-xs">🗑️</button>
                           </td>
                         </tr>
                       );
