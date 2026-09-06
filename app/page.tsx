@@ -3,6 +3,7 @@
 import './globals.css';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
+import AuthGate from './AuthGate';
 
 interface Product {
   id: string;
@@ -51,7 +52,7 @@ const CATEGORIAS = [
   { id: 'descartaveis', label: 'Descartáveis' },
 ];
 
-export default function Dashboard() {
+function Dashboard() {
   const [mainTab, setMainTab] = useState<'estoque' | 'pacientes'>('pacientes');
   
   // Estados do Estoque
@@ -964,5 +965,16 @@ export default function Dashboard() {
 
       </div>
     </div>
+  );
+}
+
+/**
+ * Nada do painel é renderizado — nem consultado no banco — antes do login.
+ */
+export default function Page() {
+  return (
+    <AuthGate>
+      <Dashboard />
+    </AuthGate>
   );
 }
