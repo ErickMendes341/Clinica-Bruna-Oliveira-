@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import AuthGate from './AuthGate';
 import Agenda from './Agenda';
 import Pesagem from './Pesagem';
+import AgendarRetorno from './AgendarRetorno';
 
 interface Product {
   id: string;
@@ -798,6 +799,16 @@ function Dashboard() {
                         <p className="whitespace-pre-wrap leading-relaxed">{selectedPaciente.observacoes}</p>
                       </div>
                     )}
+                  </div>
+
+                  {/* Marcar o retorno sem sair da ficha, durante a consulta */}
+                  <div className="print:hidden">
+                    <AgendarRetorno
+                      pacienteId={selectedPaciente.id}
+                      pacienteNome={selectedPaciente.nome}
+                      telefone={selectedPaciente.telefone}
+                      onMudou={() => fetchProximoAgendamento(selectedPaciente.id)}
+                    />
                   </div>
 
                   {/* Pesagem rápida: registra sem abrir o formulário de edição */}
