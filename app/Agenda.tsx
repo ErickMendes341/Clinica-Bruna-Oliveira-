@@ -794,6 +794,11 @@ function FormNovoAgendamento({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
+  // Paciente que ainda não existe: cadastra e agenda de uma vez só.
+  const [modoNovo, setModoNovo] = useState(false);
+  const [novoNome, setNovoNome] = useState('');
+  const [novoTelefone, setNovoTelefone] = useState('');
+
   // Quando a pessoa clica num horário livre da grade, o formulário já vem pronto.
   useEffect(() => {
     if (dataInicial) setData(dataInicial);
@@ -804,17 +809,62 @@ function FormNovoAgendamento({
     ? pacientes.filter((p) => p.nome.toLowerCase().includes(busca.toLowerCase())).slice(0, 8)
     : [];
   const escolhido = pacientes.find((p) => p.id === pacienteId);
+  const semResultado = busca.trim().length >= 2 && filtrados.length === 0;
+
+  function abrirCadastro(nomeSugerido: string) {
+    setModoNovo(true);
+    setNovoNome(nomeSugerido);
+    setPacienteId('');
+    setErro('');
+    if (tipo === 'retorno') setTipo('consulta');
+  }
+
+  function limparTudo() {
+    setPacienteId('');
+    setBusca('');
+    setObs('');
+    setHora('');
+    setModoNovo(false);
+    setNovoNome('');
+    setNovoTelefone('');
+  }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
-    if (!pacienteId) return setErro('Escolha o paciente.');
     setErro('');
-    setSalvando(true);
 
+    if (modoNovo && !novoNome.trim()) {
+      setErro('Informe o nome do paciente.');
+      return;
+    }
+    if (!modoNovo && !pacienteId) {
+      setErro('Escolha o paciente ou cadastre um novo.');
+      return;
+    }
+
+    setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
+    let idParaAgendar = pacienteId;
+
+    // Cadastro mínimo: nome e telefone. O resto da ficha se completa na consulta.
+    if (modoNovo) {
+      const { data: criado, error: erroPaciente } = await supabase
+        .from('pacientes')
+        .insert([{ nome: novoNome.trim(), telefone: novoTelefone.trim() || null }])
+        .select('id')
+        .single();
+
+      if (erroPaciente || !criado) {
+        setSalvando(false);
+        setErro(`Não foi possível cadastrar o paciente: ${erroPaciente?.message ?? 'erro desconhecido'}`);
+        return;
+      }
+      idParaAgendar = (criado as { id: string }).id;
+    }
+
     const { error } = await supabase.from('agendamentos').insert([
       {
-        paciente_id: pacienteId,
+        paciente_id: idParaAgendar,
         data,
         hora: hora || null,
         tipo,
@@ -824,12 +874,12 @@ function FormNovoAgendamento({
     ]);
 
     setSalvando(false);
-    if (error) return setErro(error.message);
+    if (error) {
+      setErro(error.message);
+      return;
+    }
 
-    setPacienteId('');
-    setBusca('');
-    setObs('');
-    setHora('');
+    limparTudo();
     onPronto();
   }
 
@@ -842,8 +892,69 @@ function FormNovoAgendamento({
       )}
 
       <div>
-        <label className="block text-xs font-semibold text-amber-900 mb-1">Paciente</label>
-        {escolhido ? (
+        <div className="flex items-center justify-between mb-1">
+          <label className="block text-xs font-semibold text-amber-900">Paciente</label>
+          {!modoNovo && !escolhido && (
+            <button
+              type="button"
+              onClick={() => abrirCadastro(busca.trim())}
+              className="text-xs font-semibold text-amber-700 hover:underline"
+            >
+              ➕ paciente novo
+            </button>
+          )}
+        </div>
+
+        {modoNovo ? (
+          <div className="space-y-2 bg-amber-50/60 border border-amber-200 rounded-xl p-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-amber-800/70">
+                Cadastrando paciente novo
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  setModoNovo(false);
+                  setNovoNome('');
+                  setNovoTelefone('');
+                }}
+                className="text-xs text-amber-700 hover:underline"
+              >
+                voltar para a busca
+              </button>
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-amber-900 mb-1">Nome completo *</label>
+              <input
+                type="text"
+                value={novoNome}
+                onChange={(e) => setNovoNome(e.target.value)}
+                placeholder="Ex: Mariana Costa"
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-semibold text-amber-900 mb-1">Telefone</label>
+              <input
+                type="text"
+                inputMode="tel"
+                value={novoTelefone}
+                onChange={(e) => setNovoTelefone(e.target.value)}
+                placeholder="(35) 90000-0000"
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none focus:ring-2 focus:ring-amber-500/50"
+              />
+              <p className="text-[10px] text-amber-800/60 mt-1">
+                Sem telefone não dá para mandar a confirmação pelo WhatsApp.
+              </p>
+            </div>
+
+            <p className="text-[11px] text-amber-800/70 leading-relaxed">
+              CPF, nascimento, endereço e o resto da ficha você completa na consulta, na aba Pacientes.
+            </p>
+          </div>
+        ) : escolhido ? (
           <div className="flex items-center justify-between bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
             <span className="text-sm font-semibold text-amber-950">{escolhido.nome.trim()}</span>
             <button
@@ -879,6 +990,15 @@ function FormNovoAgendamento({
                   </button>
                 ))}
               </div>
+            )}
+            {semResultado && (
+              <button
+                type="button"
+                onClick={() => abrirCadastro(busca.trim())}
+                className="mt-2 w-full text-left px-3 py-2.5 border border-dashed border-amber-400 rounded-lg text-sm text-amber-900 hover:bg-amber-50 transition-colors"
+              >
+                ➕ Ninguém com esse nome. <strong>Cadastrar “{busca.trim()}” como paciente novo</strong>
+              </button>
             )}
           </>
         )}
@@ -921,12 +1041,14 @@ function FormNovoAgendamento({
       </div>
 
       <div>
-        <label className="block text-xs font-semibold text-amber-900 mb-1">Observação (opcional)</label>
+        <label className="block text-xs font-semibold text-amber-900 mb-1">
+          Observação (opcional) — aparece na grade do dia
+        </label>
         <input
           type="text"
           value={obs}
           onChange={(e) => setObs(e.target.value)}
-          placeholder="Ex: trazer exames"
+          placeholder="Ex: primeira consulta, trazer exames"
           className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
         />
       </div>
@@ -938,7 +1060,7 @@ function FormNovoAgendamento({
         disabled={salvando}
         className="w-full bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white font-medium py-2.5 rounded-xl text-sm transition-colors shadow"
       >
-        {salvando ? 'Agendando…' : 'Agendar'}
+        {salvando ? 'Salvando…' : modoNovo ? 'Cadastrar e agendar' : 'Agendar'}
       </button>
     </form>
   );
