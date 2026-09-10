@@ -104,6 +104,38 @@ function Dashboard() {
     fetchData();
   }, []);
 
+  // Atualização automática de estoque, histórico e lista de pacientes:
+  // ao voltar para a tela e a cada minuto com ela aberta. Importa porque
+  // quantidade de estoque velha faz aplicar item que já acabou.
+  useEffect(() => {
+    let ultima = Date.now();
+
+    const atualizar = () => {
+      ultima = Date.now();
+      fetchProducts();
+      fetchHistorico();
+      fetchPacientes();
+    };
+
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible' && Date.now() - ultima > 10000) atualizar();
+    };
+
+    const intervalo = setInterval(() => {
+      if (document.visibilityState === 'visible') atualizar();
+    }, 60000);
+
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('focus', aoVoltar);
+
+    return () => {
+      clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('focus', aoVoltar);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function fetchData() {
     fetchProducts();
     fetchHistorico();
