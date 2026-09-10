@@ -109,8 +109,9 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   // Visão de um dia específico
   const [dia, setDia] = useState(hojeISO());
   const [agendaDia, setAgendaDia] = useState<Agendamento[]>([]);
-  const [config, setConfig] = useState<Config>({ hora_inicio: '08:00', hora_fim: '19:00', duracao_min: 30 });
+  const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', duracao_min: 30 });
   const [editandoConfig, setEditandoConfig] = useState(false);
+  const [diaAberto, setDiaAberto] = useState(false);
 
   const carregar = useCallback(async () => {
     const hoje = hojeISO();
@@ -207,6 +208,8 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         setConfig={setConfig}
         editandoConfig={editandoConfig}
         setEditandoConfig={setEditandoConfig}
+        aberto={diaAberto}
+        setAberto={setDiaAberto}
         onEscolherHorario={abrirNovoCom}
         onAbrirPaciente={onAbrirPaciente}
       />
@@ -306,6 +309,8 @@ function DiaDaAgenda({
   setConfig,
   editandoConfig,
   setEditandoConfig,
+  aberto,
+  setAberto,
   onEscolherHorario,
   onAbrirPaciente,
 }: {
@@ -316,6 +321,8 @@ function DiaDaAgenda({
   setConfig: (c: Config) => void;
   editandoConfig: boolean;
   setEditandoConfig: (v: boolean) => void;
+  aberto: boolean;
+  setAberto: (v: boolean) => void;
   onEscolherHorario: (data: string, hora?: string) => void;
   onAbrirPaciente?: (id: string) => void;
 }) {
@@ -328,8 +335,9 @@ function DiaDaAgenda({
     for (let t = inicio; t + passo <= fim; t += passo) slots.push(t);
   }
 
-  // Quem ocupa cada faixa de horário
-  const ocupacao = new Map<number, Agendamento>();
+  // Vários pacientes podem ocupar o mesmo horário — protocolos diferentes
+  // acontecem em paralelo. Por isso cada faixa guarda uma lista, não um só.
+  const porSlot = new Map<number, Agendamento[]>();
   const semHorario: Agendamento[] = [];
   for (const a of agendaDia) {
     if (!a.hora) {
@@ -338,124 +346,169 @@ function DiaDaAgenda({
     }
     const m = paraMin(a.hora);
     const slot = slots.find((s) => m >= s && m < s + passo);
-    if (slot !== undefined) ocupacao.set(slot, a);
-    else semHorario.push(a);
+    if (slot === undefined) {
+      semHorario.push(a);
+      continue;
+    }
+    const lista = porSlot.get(slot);
+    if (lista) lista.push(a);
+    else porSlot.set(slot, [a]);
   }
 
-  const livres = slots.length - ocupacao.size;
+  const vazios = slots.filter((s) => !porSlot.has(s)).length;
   const ehHoje = dia === hojeISO();
 
   return (
     <div className="bg-white border border-amber-200/70 rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-amber-100">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <h3 className="font-serif font-bold text-amber-950">🗓️ Agenda do dia</h3>
-          <button
-            onClick={() => setEditandoConfig(!editandoConfig)}
-            className="text-[11px] font-semibold text-amber-700 hover:text-amber-900"
-          >
-            ⚙️ {config.hora_inicio.slice(0, 5)}–{config.hora_fim.slice(0, 5)} · {config.duracao_min} min
-          </button>
-        </div>
-
-        {editandoConfig && (
-          <EditorConfig config={config} setConfig={setConfig} onFechar={() => setEditandoConfig(false)} />
-        )}
-
-        <div className="flex items-center gap-2 mt-3 flex-wrap">
-          <button
-            onClick={() => setDia(somaDias(dia, -1))}
-            className="px-3 py-2 border border-amber-200 rounded-lg text-sm text-amber-900 hover:bg-amber-50 transition-colors"
-            aria-label="Dia anterior"
-          >
-            ◀
-          </button>
-          <input
-            type="date"
-            value={dia}
-            onChange={(e) => setDia(e.target.value)}
-            className="px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
-          />
-          <button
-            onClick={() => setDia(somaDias(dia, 1))}
-            className="px-3 py-2 border border-amber-200 rounded-lg text-sm text-amber-900 hover:bg-amber-50 transition-colors"
-            aria-label="Próximo dia"
-          >
-            ▶
-          </button>
-          {!ehHoje && (
-            <button
-              onClick={() => setDia(hojeISO())}
-              className="px-3 py-2 text-xs font-semibold text-amber-800 hover:underline"
-            >
-              voltar para hoje
-            </button>
-          )}
-        </div>
-
-        <p className="text-xs text-amber-800/70 mt-2 capitalize">
-          {porExtenso(dia)}
-          <span className="normal-case">
-            {' '}
-            • {ocupacao.size} ocupado{ocupacao.size === 1 ? '' : 's'}, {livres} livre{livres === 1 ? '' : 's'}
-          </span>
-        </p>
-      </div>
-
-      {slots.length === 0 ? (
-        <p className="px-6 py-6 text-xs text-amber-800/60 text-center">
-          Horário de funcionamento inválido. Ajuste em ⚙️ acima.
-        </p>
-      ) : (
-        <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-          {slots.map((s) => {
-            const ag = ocupacao.get(s);
-            if (ag) {
-              return (
-                <button
-                  key={s}
-                  onClick={() => onAbrirPaciente?.(ag.paciente_id)}
-                  className="text-left px-3 py-2.5 rounded-xl bg-amber-900 text-amber-50 hover:bg-amber-950 transition-colors"
-                >
-                  <p className="text-[11px] font-bold tabular-nums text-amber-200">{paraHHMM(s)}</p>
-                  <p className="text-xs font-semibold truncate">
-                    {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
-                  </p>
-                  <p className="text-[10px] text-amber-200/80 capitalize truncate">{ag.tipo}</p>
-                </button>
-              );
-            }
-            return (
-              <button
-                key={s}
-                onClick={() => onEscolherHorario(dia, paraHHMM(s))}
-                className="text-left px-3 py-2.5 rounded-xl border border-dashed border-amber-300 text-amber-900 hover:bg-amber-50 hover:border-amber-500 transition-colors"
-              >
-                <p className="text-[11px] font-bold tabular-nums text-amber-800">{paraHHMM(s)}</p>
-                <p className="text-xs text-amber-800/60">livre</p>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {semHorario.length > 0 && (
-        <div className="px-6 py-4 border-t border-amber-100">
-          <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/60 mb-2">
-            Sem horário definido
+      {/* Cabeçalho: clicar abre e fecha a grade */}
+      <button
+        onClick={() => setAberto(!aberto)}
+        className="w-full px-6 py-4 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left"
+      >
+        <div className="min-w-0">
+          <span className="font-serif font-bold text-amber-950">🗓️ Agenda do dia</span>
+          <p className="text-xs text-amber-800/70 mt-0.5 capitalize truncate">
+            {porExtenso(dia)}
+            <span className="normal-case">
+              {' '}
+              • {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'}
+            </span>
           </p>
-          <div className="flex flex-wrap gap-2">
-            {semHorario.map((a) => (
-              <button
-                key={a.id}
-                onClick={() => onAbrirPaciente?.(a.paciente_id)}
-                className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-3 py-1.5 rounded-lg transition-colors"
-              >
-                {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {a.tipo}
-              </button>
-            ))}
-          </div>
         </div>
+        <span className="text-amber-700 text-sm flex-shrink-0">{aberto ? 'Fechar' : 'Abrir'}</span>
+      </button>
+
+      {aberto && (
+        <>
+          <div className="px-6 pb-4 border-b border-amber-100">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={() => setDia(somaDias(dia, -1))}
+                className="px-3 py-2 border border-amber-200 rounded-lg text-sm text-amber-900 hover:bg-amber-50 transition-colors"
+                aria-label="Dia anterior"
+              >
+                ◀
+              </button>
+              <input
+                type="date"
+                value={dia}
+                onChange={(e) => setDia(e.target.value)}
+                className="px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+              />
+              <button
+                onClick={() => setDia(somaDias(dia, 1))}
+                className="px-3 py-2 border border-amber-200 rounded-lg text-sm text-amber-900 hover:bg-amber-50 transition-colors"
+                aria-label="Próximo dia"
+              >
+                ▶
+              </button>
+              {!ehHoje && (
+                <button
+                  onClick={() => setDia(hojeISO())}
+                  className="px-3 py-2 text-xs font-semibold text-amber-800 hover:underline"
+                >
+                  voltar para hoje
+                </button>
+              )}
+              <button
+                onClick={() => setEditandoConfig(!editandoConfig)}
+                className="ml-auto text-[11px] font-semibold text-amber-700 hover:text-amber-900"
+              >
+                ⚙️ {config.hora_inicio.slice(0, 5)}–{config.hora_fim.slice(0, 5)} · {config.duracao_min} min
+              </button>
+            </div>
+
+            {editandoConfig && (
+              <EditorConfig config={config} setConfig={setConfig} onFechar={() => setEditandoConfig(false)} />
+            )}
+
+            <p className="text-xs text-amber-800/70 mt-3">
+              {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'} · {vazios} horário
+              {vazios === 1 ? '' : 's'} sem ninguém
+            </p>
+          </div>
+
+          {slots.length === 0 ? (
+            <p className="px-6 py-6 text-xs text-amber-800/60 text-center">
+              Horário de funcionamento inválido. Ajuste em ⚙️ acima.
+            </p>
+          ) : (
+            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
+              {slots.map((s) => {
+                const lista = porSlot.get(s);
+
+                if (!lista || lista.length === 0) {
+                  return (
+                    <button
+                      key={s}
+                      onClick={() => onEscolherHorario(dia, paraHHMM(s))}
+                      className="text-left px-3 py-2.5 rounded-xl border border-dashed border-amber-300 text-amber-900 hover:bg-amber-50 hover:border-amber-500 transition-colors"
+                    >
+                      <p className="text-[11px] font-bold tabular-nums text-amber-800">{paraHHMM(s)}</p>
+                      <p className="text-xs text-amber-800/60">livre</p>
+                    </button>
+                  );
+                }
+
+                return (
+                  <div key={s} className="px-3 py-2.5 rounded-xl bg-amber-900 text-amber-50 flex flex-col gap-1.5">
+                    <div className="flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold tabular-nums text-amber-200">{paraHHMM(s)}</p>
+                      <button
+                        onClick={() => onEscolherHorario(dia, paraHHMM(s))}
+                        title="Agendar mais um paciente neste horário"
+                        className="text-amber-200 hover:text-white text-sm font-bold leading-none px-1.5 rounded hover:bg-amber-800 transition-colors"
+                      >
+                        +
+                      </button>
+                    </div>
+
+                    {lista.map((ag) => (
+                      <button
+                        key={ag.id}
+                        onClick={() => onAbrirPaciente?.(ag.paciente_id)}
+                        className="text-left -mx-1 px-1 py-0.5 rounded hover:bg-amber-800 transition-colors"
+                      >
+                        <p className="text-xs font-semibold truncate">
+                          {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
+                        </p>
+                        <p className="text-[10px] text-amber-200/80 capitalize truncate">
+                          {ag.tipo}
+                          {ag.observacao ? ` · ${ag.observacao}` : ''}
+                        </p>
+                      </button>
+                    ))}
+
+                    {lista.length > 1 && (
+                      <p className="text-[10px] text-amber-300/70 border-t border-amber-800 pt-1">
+                        {lista.length} em paralelo
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+
+          {semHorario.length > 0 && (
+            <div className="px-6 py-4 border-t border-amber-100">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/60 mb-2">
+                Sem horário definido
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {semHorario.map((a) => (
+                  <button
+                    key={a.id}
+                    onClick={() => onAbrirPaciente?.(a.paciente_id)}
+                    className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                  >
+                    {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {a.tipo}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
       )}
     </div>
   );
