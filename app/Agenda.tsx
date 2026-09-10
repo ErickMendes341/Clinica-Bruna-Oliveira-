@@ -278,7 +278,14 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
       </div>
 
       {/* ---------------- Hoje ---------------- */}
-      <Secao titulo="🔔 Hoje" contagem={deHoje.length} vazio="Nenhum paciente agendado para hoje.">
+      <Secao
+        titulo="🔔 Hoje"
+        contagem={deHoje.length}
+        vazio="Nenhum paciente agendado para hoje."
+        colapsavel
+        abertoInicial={false}
+        resumo={resumoDeNomes(nomesDeAgendamentos(deHoje))}
+      >
         {deHoje.map((a) => (
           <LinhaAgendamento
             key={a.id}
@@ -291,7 +298,14 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
       </Secao>
 
       {/* ---------------- Próximos 7 dias ---------------- */}
-      <Secao titulo="📆 Próximos 7 dias" contagem={proximos.length} vazio="Nada agendado para esta semana.">
+      <Secao
+        titulo="📆 Próximos 7 dias"
+        contagem={proximos.length}
+        vazio="Nada agendado para esta semana."
+        colapsavel
+        abertoInicial={false}
+        resumo={resumoDeNomes(nomesDeAgendamentos(proximos))}
+      >
         {proximos.map((a) => (
           <LinhaAgendamento
             key={a.id}
@@ -309,6 +323,9 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         titulo="⚠️ Sumiram"
         contagem={sumidos.length}
         vazio={`Ninguém passou de ${limiteSumido} dias sem aparecer.`}
+        colapsavel
+        abertoInicial={false}
+        resumo={resumoDeNomes(nomesDePacientes(sumidos))}
         acessorio={
           <select
             value={limiteSumido}
@@ -333,6 +350,9 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         titulo="📋 Sem retorno marcado"
         contagem={retornosAMarcar.length}
         vazio="Todo mundo com retorno agendado."
+        colapsavel
+        abertoInicial={false}
+        resumo={resumoDeNomes(nomesDePacientes(retornosVisiveis))}
       >
         {retornosVisiveis.map((p) => (
           <LinhaPaciente key={p.id} p={p} onAbrir={onAbrirPaciente} />
@@ -886,29 +906,79 @@ function Secao({
   contagem,
   vazio,
   acessorio,
+  colapsavel,
+  abertoInicial = true,
+  resumo,
   children,
 }: {
   titulo: string;
   contagem: number;
   vazio: string;
   acessorio?: React.ReactNode;
+  colapsavel?: boolean;
+  abertoInicial?: boolean;
+  resumo?: string;
   children: React.ReactNode;
 }) {
+  const [aberto, setAberto] = useState(colapsavel ? abertoInicial : true);
+
+  const cabecalho = (
+    <>
+      <h3 className="font-serif font-bold text-amber-950">
+        {titulo} {contagem > 0 && <span className="text-amber-700/70 font-sans text-sm">({contagem})</span>}
+      </h3>
+      {colapsavel && !aberto && resumo && (
+        <p className="text-xs text-amber-800/70 mt-0.5 truncate">{resumo}</p>
+      )}
+    </>
+  );
+
   return (
     <div className="bg-white border border-amber-200/70 rounded-2xl shadow-sm overflow-hidden">
-      <div className="px-6 py-4 border-b border-amber-100 flex items-center justify-between gap-3">
-        <h3 className="font-serif font-bold text-amber-950">
-          {titulo} {contagem > 0 && <span className="text-amber-700/70 font-sans text-sm">({contagem})</span>}
-        </h3>
-        {acessorio}
+      <div className="px-6 py-4 flex items-center justify-between gap-3 border-b border-amber-100">
+        {colapsavel ? (
+          <button onClick={() => setAberto(!aberto)} className="flex-1 min-w-0 text-left">
+            {cabecalho}
+          </button>
+        ) : (
+          <div className="flex-1 min-w-0">{cabecalho}</div>
+        )}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          {acessorio}
+          {colapsavel && (
+            <button
+              onClick={() => setAberto(!aberto)}
+              className="text-amber-700 text-sm hover:text-amber-900 transition-colors"
+            >
+              {aberto ? 'Fechar' : 'Abrir'}
+            </button>
+          )}
+        </div>
       </div>
-      {contagem === 0 ? (
-        <p className="px-6 py-6 text-xs text-amber-800/60 text-center">{vazio}</p>
-      ) : (
-        <div className="divide-y divide-amber-100">{children}</div>
-      )}
+
+      {aberto &&
+        (contagem === 0 ? (
+          <p className="px-6 py-6 text-xs text-amber-800/60 text-center">{vazio}</p>
+        ) : (
+          <div className="divide-y divide-amber-100">{children}</div>
+        ))}
     </div>
   );
+}
+
+// "Renata, Marcelo, Camila +2" — para saber quem está na lista sem abrir.
+function resumoDeNomes(nomes: string[]) {
+  if (nomes.length === 0) return '';
+  const mostra = nomes.slice(0, 4).join(', ');
+  return nomes.length > 4 ? `${mostra} +${nomes.length - 4}` : mostra;
+}
+
+function nomesDeAgendamentos(lista: Agendamento[]) {
+  return lista.map((a) => (a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'));
+}
+
+function nomesDePacientes(lista: PainelPaciente[]) {
+  return lista.map((p) => primeiroNome(p.nome));
 }
 
 function LinhaAgendamento({
