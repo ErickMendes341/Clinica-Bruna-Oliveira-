@@ -113,6 +113,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   const [editandoConfig, setEditandoConfig] = useState(false);
   const [diaAberto, setDiaAberto] = useState(false);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
+  const [agSelecionado, setAgSelecionado] = useState<Agendamento | null>(null);
 
   const carregar = useCallback(async () => {
     const hoje = hojeISO();
@@ -250,7 +251,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         aberto={diaAberto}
         setAberto={setDiaAberto}
         onEscolherHorario={abrirNovoCom}
-        onAbrirPaciente={onAbrirPaciente}
+        onSelecionarAgendamento={setAgSelecionado}
       />
 
       {/* ---------------- Novo agendamento ---------------- */}
@@ -279,14 +280,27 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
       {/* ---------------- Hoje ---------------- */}
       <Secao titulo="🔔 Hoje" contagem={deHoje.length} vazio="Nenhum paciente agendado para hoje.">
         {deHoje.map((a) => (
-          <LinhaAgendamento key={a.id} ag={a} onStatus={mudarStatus} onAbrir={onAbrirPaciente} />
+          <LinhaAgendamento
+            key={a.id}
+            ag={a}
+            onStatus={mudarStatus}
+            onAbrir={onAbrirPaciente}
+            onEditar={setAgSelecionado}
+          />
         ))}
       </Secao>
 
       {/* ---------------- Próximos 7 dias ---------------- */}
       <Secao titulo="📆 Próximos 7 dias" contagem={proximos.length} vazio="Nada agendado para esta semana.">
         {proximos.map((a) => (
-          <LinhaAgendamento key={a.id} ag={a} onStatus={mudarStatus} onAbrir={onAbrirPaciente} mostrarDia />
+          <LinhaAgendamento
+            key={a.id}
+            ag={a}
+            onStatus={mudarStatus}
+            onAbrir={onAbrirPaciente}
+            onEditar={setAgSelecionado}
+            mostrarDia
+          />
         ))}
       </Secao>
 
@@ -332,6 +346,204 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
           </button>
         )}
       </Secao>
+
+      {agSelecionado && (
+        <DetalheAgendamento
+          ag={agSelecionado}
+          onFechar={() => setAgSelecionado(null)}
+          onAbrirPaciente={onAbrirPaciente}
+          onMudou={() => {
+            setAgSelecionado(null);
+            recarregarTudo();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Detalhe de um agendamento — remarcar, desmarcar ou excluir          */
+/* ------------------------------------------------------------------ */
+
+function DetalheAgendamento({
+  ag,
+  onFechar,
+  onAbrirPaciente,
+  onMudou,
+}: {
+  ag: Agendamento;
+  onFechar: () => void;
+  onAbrirPaciente?: (id: string) => void;
+  onMudou: () => void;
+}) {
+  const [novaData, setNovaData] = useState(ag.data);
+  const [novaHora, setNovaHora] = useState(ag.hora ? ag.hora.slice(0, 5) : '');
+  const [remarcando, setRemarcando] = useState(false);
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const nome = ag.pacientes?.nome?.trim() || 'Paciente';
+
+  async function remarcar() {
+    setSalvando(true);
+    setErro('');
+    const { error } = await supabase
+      .from('agendamentos')
+      .update({ data: novaData, hora: novaHora || null })
+      .eq('id', ag.id);
+    setSalvando(false);
+    if (error) return setErro(error.message);
+    onMudou();
+  }
+
+  async function desmarcar() {
+    setSalvando(true);
+    setErro('');
+    const { error } = await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', ag.id);
+    setSalvando(false);
+    if (error) return setErro(error.message);
+    onMudou();
+  }
+
+  async function excluir() {
+    setSalvando(true);
+    setErro('');
+    const { error } = await supabase.from('agendamentos').delete().eq('id', ag.id);
+    setSalvando(false);
+    if (error) return setErro(error.message);
+    onMudou();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-amber-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+      onClick={onFechar}
+    >
+      <div
+        className="bg-white border border-amber-200 rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+        onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-amber-100">
+          <h2 className="text-lg font-serif font-bold text-amber-950">{nome}</h2>
+          <p className="text-xs text-amber-800/70 mt-0.5 capitalize">
+            {porExtenso(ag.data)}
+            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'} · {ag.tipo}
+          </p>
+          {ag.observacao && (
+            <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {ag.observacao}
+            </p>
+          )}
+        </div>
+
+        <div className="px-6 py-4 space-y-2">
+          {onAbrirPaciente && (
+            <button
+              onClick={() => {
+                onFechar();
+                onAbrirPaciente(ag.paciente_id);
+              }}
+              className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 transition-colors"
+            >
+              👤 Abrir a ficha do paciente
+            </button>
+          )}
+
+          {/* Reagendou: move o mesmo agendamento de data/hora */}
+          {remarcando ? (
+            <div className="p-3 border border-amber-300 rounded-xl bg-amber-50/60 space-y-2">
+              <p className="text-xs font-semibold text-amber-900">Nova data e hora</p>
+              <div className="flex gap-2">
+                <input
+                  type="date"
+                  value={novaData}
+                  onChange={(e) => setNovaData(e.target.value)}
+                  className="flex-1 px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+                />
+                <input
+                  type="time"
+                  value={novaHora}
+                  onChange={(e) => setNovaHora(e.target.value)}
+                  className="px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setRemarcando(false)}
+                  className="flex-1 text-sm font-semibold px-4 py-2 rounded-lg border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={remarcar}
+                  disabled={salvando}
+                  className="flex-1 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
+                  {salvando ? 'Salvando…' : 'Confirmar'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setRemarcando(true)}
+              className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 transition-colors"
+            >
+              🔄 Reagendou — mudar a data ou o horário
+            </button>
+          )}
+
+          {/* Desmarcou: fica registrado que houve um cancelamento */}
+          <button
+            onClick={desmarcar}
+            disabled={salvando}
+            className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+          >
+            🚫 Desmarcou — sai da agenda, fica no histórico
+          </button>
+
+          {/* Digitação errada: some de vez */}
+          {confirmandoExclusao ? (
+            <div className="p-3 border border-red-300 bg-red-50 rounded-xl space-y-2">
+              <p className="text-xs text-red-800 font-semibold">
+                Excluir de vez? Some sem deixar registro — use só quando o agendamento foi criado por engano.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmandoExclusao(false)}
+                  className="flex-1 text-sm font-semibold px-4 py-2 rounded-lg border border-red-200 text-red-800 hover:bg-red-100 transition-colors"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={excluir}
+                  disabled={salvando}
+                  className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
+                  {salvando ? 'Excluindo…' : 'Excluir'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmandoExclusao(true)}
+              className="w-full text-left px-4 py-3 rounded-xl border border-red-200 text-sm font-semibold text-red-800 hover:bg-red-50 transition-colors"
+            >
+              🗑️ Foi engano — excluir de vez
+            </button>
+          )}
+
+          {erro && <p className="text-xs text-red-700 font-semibold">{erro}</p>}
+        </div>
+
+        <button
+          onClick={onFechar}
+          className="w-full px-6 py-3 border-t border-amber-100 text-sm font-semibold text-amber-800 hover:bg-amber-50 transition-colors"
+        >
+          Fechar
+        </button>
+      </div>
     </div>
   );
 }
@@ -351,7 +563,7 @@ function DiaDaAgenda({
   aberto,
   setAberto,
   onEscolherHorario,
-  onAbrirPaciente,
+  onSelecionarAgendamento,
 }: {
   dia: string;
   setDia: (d: string) => void;
@@ -363,7 +575,7 @@ function DiaDaAgenda({
   aberto: boolean;
   setAberto: (v: boolean) => void;
   onEscolherHorario: (data: string, hora?: string) => void;
-  onAbrirPaciente?: (id: string) => void;
+  onSelecionarAgendamento: (ag: Agendamento) => void;
 }) {
   const inicio = paraMin(config.hora_inicio);
   const fim = paraMin(config.hora_fim);
@@ -505,7 +717,8 @@ function DiaDaAgenda({
                     {lista.map((ag) => (
                       <button
                         key={ag.id}
-                        onClick={() => onAbrirPaciente?.(ag.paciente_id)}
+                        onClick={() => onSelecionarAgendamento(ag)}
+                        title="Ver, remarcar, desmarcar ou excluir"
                         className="text-left -mx-1 px-1 py-0.5 rounded hover:bg-amber-800 transition-colors"
                       >
                         <p className="text-xs font-semibold truncate">
@@ -538,7 +751,7 @@ function DiaDaAgenda({
                 {semHorario.map((a) => (
                   <button
                     key={a.id}
-                    onClick={() => onAbrirPaciente?.(a.paciente_id)}
+                    onClick={() => onSelecionarAgendamento(a)}
                     className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-3 py-1.5 rounded-lg transition-colors"
                   >
                     {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {a.tipo}
@@ -702,11 +915,13 @@ function LinhaAgendamento({
   ag,
   onStatus,
   onAbrir,
+  onEditar,
   mostrarDia,
 }: {
   ag: Agendamento;
   onStatus: (id: string, status: string) => void;
   onAbrir?: (id: string) => void;
+  onEditar?: (ag: Agendamento) => void;
   mostrarDia?: boolean;
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
@@ -762,6 +977,15 @@ function LinhaAgendamento({
         >
           Faltou
         </button>
+        {onEditar && (
+          <button
+            onClick={() => onEditar(ag)}
+            title="Remarcar, desmarcar ou excluir"
+            className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-100 font-semibold px-2 py-1.5 rounded-lg transition-colors"
+          >
+            ⋯
+          </button>
+        )}
       </div>
     </div>
   );
