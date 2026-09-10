@@ -49,6 +49,13 @@ interface ConsumoPaciente {
   created_at: string;
 }
 
+// Uma "página" do app: em qual aba você está e, se for o caso, qual ficha
+// está aberta. É o que empilhamos para o botão de voltar funcionar.
+interface Vista {
+  tab: 'estoque' | 'pacientes' | 'agenda';
+  pacienteId: string | null;
+}
+
 const CATEGORIAS = [
   { id: 'todos', label: 'Todos os Itens' },
   { id: 'medicacao', label: 'Medicação' },
@@ -59,6 +66,7 @@ const CATEGORIAS = [
 function Dashboard() {
   const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda'>('agenda');
   const [proximoAgendamento, setProximoAgendamento] = useState<string | null>(null);
+  const [pilhaVistas, setPilhaVistas] = useState<Vista[]>([]);
   
   // Estados do Estoque
   const [products, setProducts] = useState<Product[]>([]);
@@ -375,10 +383,56 @@ function Dashboard() {
     }
   }
 
+  /* ---------------- Navegação com histórico ----------------
+     O app é uma página só, então "voltar" precisa ser construído: cada
+     mudança de aba ou abertura de ficha empilha de onde você veio.
+     Também empilhamos no histórico do navegador, para que o botão voltar
+     do celular volte dentro do app em vez de fechá-lo.               */
+
+  function aplicarVista(v: Vista) {
+    setMainTab(v.tab);
+    if (v.pacienteId) {
+      const p = pacientes.find((x) => x.id === v.pacienteId);
+      if (p) {
+        setSelectedPaciente(p);
+        fetchConsumos(p.id);
+        fetchProximoAgendamento(p.id);
+      } else {
+        setSelectedPaciente(null);
+      }
+    } else {
+      setSelectedPaciente(null);
+    }
+  }
+
+  function irPara(v: Vista) {
+    setPilhaVistas((h) => [...h, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null }]);
+    window.history.pushState({ app: true }, '');
+    aplicarVista(v);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
+  function voltar() {
+    if (pilhaVistas.length === 0) return;
+    // Dispara o popstate abaixo, que é quem de fato desempilha.
+    window.history.back();
+  }
+
+  useEffect(() => {
+    const aoVoltarNavegador = () => {
+      if (pilhaVistas.length === 0) return;
+      const anterior = pilhaVistas[pilhaVistas.length - 1];
+      setPilhaVistas(pilhaVistas.slice(0, -1));
+      aplicarVista(anterior);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    };
+    window.addEventListener('popstate', aoVoltarNavegador);
+    return () => window.removeEventListener('popstate', aoVoltarNavegador);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pilhaVistas, pacientes]);
+
   async function openFichaPaciente(p: Paciente) {
-    setSelectedPaciente(p);
-    fetchConsumos(p.id);
-    fetchProximoAgendamento(p.id);
+    irPara({ tab: 'pacientes', pacienteId: p.id });
   }
 
   async function fetchProximoAgendamento(pacienteId: string) {
@@ -397,11 +451,8 @@ function Dashboard() {
 
   // Usado pelo painel da Agenda: clicar num nome abre a ficha da pessoa.
   function abrirPacientePorId(id: string) {
-    const p = pacientes.find((x) => x.id === id);
-    if (!p) return;
-    setMainTab('pacientes');
-    openFichaPaciente(p);
-    window.scrollTo({ top: 0, behavior: 'smooth' });
+    if (!pacientes.some((x) => x.id === id)) return;
+    irPara({ tab: 'pacientes', pacienteId: id });
   }
 
   function calcularIdade(dataNascimentoStr?: string) {
@@ -509,6 +560,16 @@ function Dashboard() {
           <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
             
             <div className="flex items-center space-x-5">
+              {pilhaVistas.length > 0 && (
+                <button
+                  onClick={voltar}
+                  aria-label="Voltar para a tela anterior"
+                  title="Voltar"
+                  className="flex-shrink-0 w-10 h-10 rounded-full border border-amber-300 bg-white text-amber-900 text-lg font-bold hover:bg-amber-100 transition-colors shadow-sm print:hidden"
+                >
+                  ←
+                </button>
+              )}
               <div className="w-20 h-20 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-md overflow-hidden flex-shrink-0">
                 <img
                   src="/logo.jpeg"
@@ -543,19 +604,19 @@ function Dashboard() {
               
               <div className="flex space-x-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50">
                 <button
-                  onClick={() => setMainTab('agenda')}
+                  onClick={() => irPara({ tab: 'agenda', pacienteId: null })}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'agenda' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
                 >
                   🔔 Agenda
                 </button>
                 <button
-                  onClick={() => setMainTab('pacientes')}
+                  onClick={() => irPara({ tab: 'pacientes', pacienteId: null })}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'pacientes' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
                 >
                   👤 Pacientes
                 </button>
                 <button
-                  onClick={() => setMainTab('estoque')}
+                  onClick={() => irPara({ tab: 'estoque', pacienteId: null })}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm relative' : 'text-amber-900 hover:text-amber-950'}`}
                 >
                   📦 Estoque Médico
