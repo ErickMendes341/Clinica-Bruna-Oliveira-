@@ -4,6 +4,8 @@ import './globals.css';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import AuthGate from './AuthGate';
+import Agenda from './Agenda';
+import Pesagem from './Pesagem';
 
 interface Product {
   id: string;
@@ -35,6 +37,7 @@ interface Paciente {
   endereco?: string;
   observacoes?: string;
   data_retorno?: string;
+  meta_peso?: number;
 }
 
 interface ConsumoPaciente {
@@ -53,7 +56,8 @@ const CATEGORIAS = [
 ];
 
 function Dashboard() {
-  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes'>('pacientes');
+  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda'>('agenda');
+  const [proximoAgendamento, setProximoAgendamento] = useState<string | null>(null);
   
   // Estados do Estoque
   const [products, setProducts] = useState<Product[]>([]);
@@ -83,6 +87,7 @@ function Dashboard() {
   const [endereco, setEndereco] = useState('');
   const [observacoes, setObservacoes] = useState('');
   const [dataRetorno, setDataRetorno] = useState('');
+  const [metaPeso, setMetaPeso] = useState('');
   
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   
@@ -250,6 +255,7 @@ function Dashboard() {
     setEndereco('');
     setObservacoes('');
     setDataRetorno('');
+    setMetaPeso('');
   }
 
   function handlePrepareEditPaciente(p: Paciente, e?: React.MouseEvent) {
@@ -264,6 +270,7 @@ function Dashboard() {
     setEndereco(p.endereco || '');
     setObservacoes(p.observacoes || '');
     setDataRetorno(p.data_retorno || '');
+    setMetaPeso(p.meta_peso ? String(p.meta_peso) : '');
   }
 
   async function handleSavePaciente(e: React.FormEvent) {
@@ -288,7 +295,8 @@ function Dashboard() {
       altura: alturaParsed,
       endereco: endereco || null,
       observacoes: observacoes || null,
-      data_retorno: dataRetorno || null
+      data_retorno: dataRetorno || null,
+      meta_peso: metaPeso ? parseFloat(String(metaPeso).replace(',', '.')) : null
     };
 
     try {
@@ -337,6 +345,30 @@ function Dashboard() {
   async function openFichaPaciente(p: Paciente) {
     setSelectedPaciente(p);
     fetchConsumos(p.id);
+    fetchProximoAgendamento(p.id);
+  }
+
+  async function fetchProximoAgendamento(pacienteId: string) {
+    const d = new Date();
+    const iso = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const { data } = await supabase
+      .from('agendamentos')
+      .select('data')
+      .eq('paciente_id', pacienteId)
+      .in('status', ['agendado', 'confirmado'])
+      .gte('data', iso)
+      .order('data', { ascending: true })
+      .limit(1);
+    setProximoAgendamento(data && data[0] ? (data[0] as { data: string }).data : null);
+  }
+
+  // Usado pelo painel da Agenda: clicar num nome abre a ficha da pessoa.
+  function abrirPacientePorId(id: string) {
+    const p = pacientes.find((x) => x.id === id);
+    if (!p) return;
+    setMainTab('pacientes');
+    openFichaPaciente(p);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   }
 
   function calcularIdade(dataNascimentoStr?: string) {
@@ -478,6 +510,12 @@ function Dashboard() {
               
               <div className="flex space-x-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50">
                 <button
+                  onClick={() => setMainTab('agenda')}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'agenda' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                >
+                  🔔 Agenda
+                </button>
+                <button
                   onClick={() => setMainTab('pacientes')}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'pacientes' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
                 >
@@ -557,6 +595,9 @@ function Dashboard() {
           )}
         </div>
 
+        {/* VIEW: AGENDA — lembretes de quem vem, quem falta marcar e quem sumiu */}
+        {mainTab === 'agenda' && <Agenda onAbrirPaciente={abrirPacientePorId} />}
+
         {/* VIEW: PACIENTES */}
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -607,8 +648,9 @@ function Dashboard() {
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-amber-900 mb-1">Data do Próximo Retorno</label>
-                    <input type="date" value={dataRetorno} onChange={(e) => setDataRetorno(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Meta de Peso (kg)</label>
+                    <input type="text" inputMode="decimal" value={metaPeso} onChange={(e) => setMetaPeso(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Ex: 72 — aparece como linha no gráfico" />
+                    <p className="text-[10px] text-amber-800/60 mt-1">O retorno agora é marcado na aba 🔔 Agenda.</p>
                   </div>
 
                   <div>
@@ -739,7 +781,9 @@ function Dashboard() {
                       <div className="bg-amber-50/50 p-3 rounded-xl border border-amber-200/50">
                         <span className="text-amber-800/70 block font-semibold">Próximo Retorno</span>
                         <span className="font-bold text-amber-900">
-                          {selectedPaciente.data_retorno ? new Date(selectedPaciente.data_retorno).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : 'Não agendado'}
+                          {proximoAgendamento
+                            ? new Date(proximoAgendamento + 'T12:00:00').toLocaleDateString('pt-BR')
+                            : 'Não agendado'}
                         </span>
                       </div>
                     </div>
@@ -754,6 +798,16 @@ function Dashboard() {
                         <p className="whitespace-pre-wrap leading-relaxed">{selectedPaciente.observacoes}</p>
                       </div>
                     )}
+                  </div>
+
+                  {/* Pesagem rápida: registra sem abrir o formulário de edição */}
+                  <div className="print:hidden">
+                    <Pesagem
+                      pacienteId={selectedPaciente.id}
+                      altura={selectedPaciente.altura}
+                      metaPeso={selectedPaciente.meta_peso}
+                      onMudou={fetchPacientes}
+                    />
                   </div>
 
                   <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">
