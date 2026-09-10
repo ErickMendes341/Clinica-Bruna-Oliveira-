@@ -112,6 +112,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', duracao_min: 30 });
   const [editandoConfig, setEditandoConfig] = useState(false);
   const [diaAberto, setDiaAberto] = useState(false);
+  const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
 
   const carregar = useCallback(async () => {
     const hoje = hojeISO();
@@ -135,6 +136,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
     setPainel((pac as PainelPaciente[]) || []);
     setAgenda((ag as Agendamento[]) || []);
     if (cfg && cfg[0]) setConfig(cfg[0] as Config);
+    setUltimaAtualizacao(new Date());
     setCarregando(false);
   }, []);
 
@@ -155,6 +157,36 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   useEffect(() => {
     carregarDia(dia);
   }, [dia, carregarDia]);
+
+  // Atualização automática: quando você volta para a tela (troca de aba do
+  // navegador, desbloqueia o celular) e a cada minuto enquanto ela fica aberta.
+  // Com a aba escondida não busca nada, para não gastar bateria à toa.
+  useEffect(() => {
+    let ultima = Date.now();
+
+    const atualizar = () => {
+      ultima = Date.now();
+      carregar();
+      carregarDia(dia);
+    };
+
+    const aoVoltar = () => {
+      if (document.visibilityState === 'visible' && Date.now() - ultima > 10000) atualizar();
+    };
+
+    const intervalo = setInterval(() => {
+      if (document.visibilityState === 'visible') atualizar();
+    }, 60000);
+
+    document.addEventListener('visibilitychange', aoVoltar);
+    window.addEventListener('focus', aoVoltar);
+
+    return () => {
+      clearInterval(intervalo);
+      document.removeEventListener('visibilitychange', aoVoltar);
+      window.removeEventListener('focus', aoVoltar);
+    };
+  }, [carregar, carregarDia, dia]);
 
   async function recarregarTudo() {
     await carregar();
@@ -198,6 +230,13 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         <Tile numero={retornosAMarcar.length} rotulo="sem retorno marcado" />
         <Tile numero={sumidos.length} rotulo={`sem vir há ${limiteSumido}+ dias`} alerta={sumidos.length > 0} />
       </div>
+
+      {ultimaAtualizacao && (
+        <p className="text-[11px] text-amber-800/50 -mt-3 px-1">
+          Atualiza sozinho · última vez às{' '}
+          {ultimaAtualizacao.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+        </p>
+      )}
 
       {/* ---------------- Grade do dia ---------------- */}
       <DiaDaAgenda
