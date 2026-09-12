@@ -44,6 +44,8 @@ interface Paciente {
 interface ConsumoPaciente {
   id: string;
   paciente_id: string;
+  // Pode ser nulo se o produto foi excluído do estoque depois da aplicação.
+  produto_id?: string | null;
   nome_produto: string;
   quantidade: number;
   created_at: string;
@@ -104,6 +106,8 @@ function Dashboard() {
   const [consumos, setConsumos] = useState<ConsumoPaciente[]>([]);
   const [selectedProdutoId, setSelectedProdutoId] = useState('');
   const [qtdConsumo, setQtdConsumo] = useState('1');
+  const [consumosAberto, setConsumosAberto] = useState(false);
+  const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
 
   const [mounted, setMounted] = useState(false);
 
@@ -493,6 +497,120 @@ function Dashboard() {
     const numLimpo = telefone.replace(/\D/g, '');
     const numComDDI = numLimpo.startsWith('55') ? numLimpo : `55${numLimpo}`;
     return `https://wa.me/${numComDDI}?text=${encodeURIComponent(mensagemCustomizada || '')}`;
+  }
+
+  /* ---------- Correção de item aplicado ----------
+     Apagar e editar mexem no estoque de verdade. Para não trabalhar com
+     número velho na tela, a quantidade atual do produto é lida do banco
+     na hora, e toda devolução deixa registro no histórico.            */
+
+  async function estoqueAtual(produtoId: string) {
+    const { data } = await supabase.from('produtos').select('id,nome,quantidade').eq('id', produtoId).single();
+    return (data as { id: string; nome: string; quantidade: number } | null) ?? null;
+  }
+
+  async function handleDeleteConsumo(c: ConsumoPaciente) {
+    if (!selectedPaciente) return;
+    if (!confirm(`Apagar "${c.nome_produto}" (${c.quantidade} un.) da ficha e devolver ao estoque?`)) return;
+
+    if (c.produto_id) {
+      const prod = await estoqueAtual(c.produto_id);
+      if (prod) {
+        await supabase
+          .from('produtos')
+          .update({ quantidade: prod.quantidade + c.quantidade })
+          .eq('id', prod.id);
+        await registrarMovimentacao(
+          prod.id,
+          `${prod.nome} (Estorno: ${selectedPaciente.nome})`,
+          'ENTRADA',
+          c.quantidade
+        );
+      }
+    }
+
+    const { error } = await supabase.from('consumos_paciente').delete().eq('id', c.id);
+    if (error) {
+      alert(`Erro ao apagar: ${error.message}`);
+      return;
+    }
+
+    if (!c.produto_id) {
+      alert('Item apagado da ficha. O produto não está mais no estoque, então não houve devolução.');
+    }
+
+    fetchData();
+    fetchConsumos(selectedPaciente.id);
+  }
+
+  async function handleSalvarEdicaoConsumo(c: ConsumoPaciente, novoProdutoId: string, novaQtd: number) {
+    if (!selectedPaciente) return { ok: false, msg: 'Paciente não selecionado.' };
+    if (isNaN(novaQtd) || novaQtd <= 0) return { ok: false, msg: 'Quantidade inválida.' };
+
+    const mesmoProduto = c.produto_id === novoProdutoId;
+
+    if (mesmoProduto && c.produto_id) {
+      const prod = await estoqueAtual(c.produto_id);
+      if (!prod) return { ok: false, msg: 'Produto não encontrado no estoque.' };
+
+      const diferenca = novaQtd - c.quantidade; // >0 tira mais, <0 devolve
+      if (diferenca > prod.quantidade) {
+        return { ok: false, msg: `Estoque insuficiente. Disponível: ${prod.quantidade} un.` };
+      }
+
+      await supabase.from('produtos').update({ quantidade: prod.quantidade - diferenca }).eq('id', prod.id);
+      if (diferenca !== 0) {
+        await registrarMovimentacao(
+          prod.id,
+          `${prod.nome} (Correção: ${selectedPaciente.nome})`,
+          diferenca > 0 ? 'SAIDA' : 'ENTRADA',
+          Math.abs(diferenca)
+        );
+      }
+    } else {
+      // Trocou de produto: devolve tudo ao antigo e tira do novo.
+      const novo = await estoqueAtual(novoProdutoId);
+      if (!novo) return { ok: false, msg: 'Produto não encontrado no estoque.' };
+      if (novaQtd > novo.quantidade) {
+        return { ok: false, msg: `Estoque insuficiente de ${novo.nome}. Disponível: ${novo.quantidade} un.` };
+      }
+
+      if (c.produto_id) {
+        const antigo = await estoqueAtual(c.produto_id);
+        if (antigo) {
+          await supabase
+            .from('produtos')
+            .update({ quantidade: antigo.quantidade + c.quantidade })
+            .eq('id', antigo.id);
+          await registrarMovimentacao(
+            antigo.id,
+            `${antigo.nome} (Estorno: ${selectedPaciente.nome})`,
+            'ENTRADA',
+            c.quantidade
+          );
+        }
+      }
+
+      await supabase.from('produtos').update({ quantidade: novo.quantidade - novaQtd }).eq('id', novo.id);
+      await registrarMovimentacao(
+        novo.id,
+        `${novo.nome} (Correção: ${selectedPaciente.nome})`,
+        'SAIDA',
+        novaQtd
+      );
+    }
+
+    const nomeNovo = products.find((p) => p.id === novoProdutoId)?.nome ?? c.nome_produto;
+    const { error } = await supabase
+      .from('consumos_paciente')
+      .update({ produto_id: novoProdutoId, nome_produto: nomeNovo, quantidade: novaQtd })
+      .eq('id', c.id);
+
+    if (error) return { ok: false, msg: error.message };
+
+    fetchData();
+    fetchConsumos(selectedPaciente.id);
+    return { ok: true, msg: '' };
   }
 
   async function handleUsarItemNoPaciente(e: React.FormEvent) {
@@ -951,21 +1069,48 @@ function Dashboard() {
                     </form>
                   </div>
 
-                  <div>
-                    <h3 className="font-serif font-bold text-amber-950 text-base mb-3">📋 Medicamentos & Procedimentos Aplicados</h3>
-                    <div className="border border-amber-200/80 rounded-xl overflow-hidden">
-                      <table className="w-full text-left text-sm">
+                  <div className="border border-amber-200/80 rounded-xl overflow-hidden">
+                    <button
+                      onClick={() => setConsumosAberto(!consumosAberto)}
+                      className="w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left print:hidden"
+                    >
+                      <div className="min-w-0">
+                        <h3 className="font-serif font-bold text-amber-950 text-base">
+                          📋 Medicamentos & Procedimentos Aplicados{' '}
+                          {consumos.length > 0 && (
+                            <span className="text-amber-700/70 font-sans text-sm">({consumos.length})</span>
+                          )}
+                        </h3>
+                        {!consumosAberto && consumos.length > 0 && (
+                          <p className="text-xs text-amber-800/70 mt-0.5 truncate">
+                            último: {consumos[0].nome_produto} em{' '}
+                            {new Date(consumos[0].created_at).toLocaleDateString('pt-BR')}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-amber-700 text-sm flex-shrink-0">
+                        {consumosAberto ? 'Fechar' : 'Abrir'}
+                      </span>
+                    </button>
+
+                    {/* Na impressão a lista sai sempre, aberta ou não. */}
+                    <div className={consumosAberto ? '' : 'hidden print:block'}>
+                      <h3 className="hidden print:block font-serif font-bold text-amber-950 text-base px-4 pt-2">
+                        📋 Medicamentos & Procedimentos Aplicados
+                      </h3>
+                      <table className="w-full text-left text-sm border-t border-amber-200/80">
                         <thead className="bg-amber-100/50 text-amber-950 border-b border-amber-200/80 font-serif">
                           <tr>
                             <th className="py-2.5 px-4">Descrição do Item</th>
                             <th className="py-2.5 px-4">Quantidade</th>
                             <th className="py-2.5 px-4">Data / Hora</th>
+                            <th className="py-2.5 px-4 text-right print:hidden">Corrigir</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-amber-100">
                           {consumos.length === 0 ? (
                             <tr>
-                              <td colSpan={3} className="py-6 text-center text-amber-800/50 text-xs">Nenhum item aplicado até o momento.</td>
+                              <td colSpan={4} className="py-6 text-center text-amber-800/50 text-xs">Nenhum item aplicado até o momento.</td>
                             </tr>
                           ) : (
                             consumos.map((c) => (
@@ -973,6 +1118,22 @@ function Dashboard() {
                                 <td className="py-2.5 px-4 font-medium text-amber-950">{c.nome_produto}</td>
                                 <td className="py-2.5 px-4 font-semibold text-amber-900">{c.quantidade} un.</td>
                                 <td className="py-2.5 px-4 text-amber-800/70 text-xs">{new Date(c.created_at).toLocaleString('pt-BR')}</td>
+                                <td className="py-2.5 px-4 text-right whitespace-nowrap print:hidden">
+                                  <button
+                                    onClick={() => setEditandoConsumo(c)}
+                                    title="Corrigir item ou quantidade"
+                                    className="text-xs p-1.5 hover:bg-amber-100 rounded-md"
+                                  >
+                                    ✏️
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteConsumo(c)}
+                                    title="Apagar e devolver ao estoque"
+                                    className="text-xs p-1.5 hover:bg-red-100 rounded-md"
+                                  >
+                                    🗑️
+                                  </button>
+                                </td>
                               </tr>
                             ))
                           )}
@@ -990,6 +1151,15 @@ function Dashboard() {
             </div>
 
           </div>
+        )}
+
+        {editandoConsumo && (
+          <ModalEditarConsumo
+            consumo={editandoConsumo}
+            produtos={products}
+            onFechar={() => setEditandoConsumo(null)}
+            onSalvar={handleSalvarEdicaoConsumo}
+          />
         )}
 
         {/* VIEW: ESTOQUE */}
@@ -1121,6 +1291,123 @@ function Dashboard() {
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Correção de um item já aplicado na ficha                            */
+/* ------------------------------------------------------------------ */
+
+function ModalEditarConsumo({
+  consumo,
+  produtos,
+  onFechar,
+  onSalvar,
+}: {
+  consumo: ConsumoPaciente;
+  produtos: Product[];
+  onFechar: () => void;
+  onSalvar: (c: ConsumoPaciente, produtoId: string, qtd: number) => Promise<{ ok: boolean; msg: string }>;
+}) {
+  const [produtoId, setProdutoId] = useState(consumo.produto_id || '');
+  const [qtd, setQtd] = useState(String(consumo.quantidade));
+  const [salvando, setSalvando] = useState(false);
+  const [erro, setErro] = useState('');
+
+  const produtoEscolhido = produtos.find((p) => p.id === produtoId);
+  const mesmoProduto = produtoId === consumo.produto_id;
+  const diferenca = mesmoProduto ? (parseInt(qtd) || 0) - consumo.quantidade : 0;
+
+  async function salvar() {
+    setSalvando(true);
+    setErro('');
+    const r = await onSalvar(consumo, produtoId, parseInt(qtd));
+    setSalvando(false);
+    if (!r.ok) {
+      setErro(r.msg);
+      return;
+    }
+    onFechar();
+  }
+
+  return (
+    <div className="fixed inset-0 bg-amber-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden">
+      <div className="bg-white border border-amber-200 rounded-2xl shadow-xl p-6 w-full max-w-sm">
+        <h2 className="text-lg font-serif font-bold text-amber-950 mb-1">Corrigir item aplicado</h2>
+        <p className="text-xs text-amber-900/70 mb-5">
+          Era <strong>{consumo.nome_produto}</strong>, {consumo.quantidade} un. O estoque se ajusta sozinho
+          à diferença.
+        </p>
+
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-semibold text-amber-900 mb-1">Item</label>
+            <select
+              value={produtoId}
+              onChange={(e) => setProdutoId(e.target.value)}
+              className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+            >
+              {!consumo.produto_id && <option value="">— produto não está mais no estoque —</option>}
+              {produtos.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.nome} (disponível: {p.quantidade} un.)
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-semibold text-amber-900 mb-1">Quantidade</label>
+            <input
+              type="number"
+              min="1"
+              value={qtd}
+              onChange={(e) => setQtd(e.target.value)}
+              className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+            />
+          </div>
+
+          {mesmoProduto && diferenca !== 0 && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {diferenca > 0
+                ? `Vai sair mais ${diferenca} un. do estoque.`
+                : `Vão voltar ${Math.abs(diferenca)} un. para o estoque.`}
+            </p>
+          )}
+
+          {!mesmoProduto && produtoEscolhido && (
+            <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              {consumo.quantidade} un. de {consumo.nome_produto} voltam ao estoque, e saem {qtd || 0} un. de{' '}
+              {produtoEscolhido.nome}.
+            </p>
+          )}
+
+          {erro && (
+            <div className="bg-red-50 border-l-4 border-red-500 px-3 py-2.5 rounded-lg">
+              <p className="text-xs text-red-800 font-semibold">{erro}</p>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={onFechar}
+              className="flex-1 text-sm font-semibold px-4 py-2.5 rounded-xl border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
+            >
+              Cancelar
+            </button>
+            <button
+              type="button"
+              onClick={salvar}
+              disabled={salvando || !produtoId}
+              className="flex-1 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2.5 rounded-xl shadow transition-colors"
+            >
+              {salvando ? 'Salvando…' : 'Salvar'}
+            </button>
+          </div>
+        </div>
       </div>
     </div>
   );
