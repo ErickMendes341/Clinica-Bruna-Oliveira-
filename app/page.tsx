@@ -44,9 +44,19 @@ interface Paciente {
   pref_musica?: string | null;
   pref_bebida?: string | null;
   pref_comida?: string | null;
+  // Paciente arquivado sai da lista, mas o prontuário continua no banco.
+  arquivado_em?: string | null;
 }
 
-const BEBIDAS = ['Água', 'Água com gás', 'Café', 'Suco', 'Whey'];
+const BEBIDAS = [
+  'Água',
+  'Água com gás',
+  'Café puro',
+  'Café com adoçante',
+  'Capuccino',
+  'Capuccino com Whey',
+  'Sem preferência',
+];
 
 interface ConsumoPaciente {
   id: string;
@@ -119,6 +129,8 @@ function Dashboard() {
   const [qtdConsumo, setQtdConsumo] = useState('1');
   const [consumosAberto, setConsumosAberto] = useState(false);
   const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
+  const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
+  const [mostrarArquivados, setMostrarArquivados] = useState(false);
 
   const [mounted, setMounted] = useState(false);
 
@@ -391,23 +403,47 @@ function Dashboard() {
     }
   }
 
-  async function handleDeletePaciente(p: Paciente, e?: React.MouseEvent) {
-    if (e) e.stopPropagation();
-    if (!confirm(`Tem certeza que deseja excluir o paciente "${p.nome}"?`)) return;
+  /* ---------- Arquivar x excluir ----------
+     Prontuário tem guarda obrigatória: paciente que parou de vir deve ser
+     arquivado, não apagado. Excluir de vez existe para cadastro duplicado
+     ou criado por engano — e apaga o histórico junto.                   */
 
+  async function handleArquivarPaciente(p: Paciente) {
+    const { error } = await supabase
+      .from('pacientes')
+      .update({ arquivado_em: new Date().toISOString() })
+      .eq('id', p.id);
+
+    if (error) return alert(`Erro ao arquivar: ${error.message}`);
+
+    if (selectedPaciente?.id === p.id) {
+      setSelectedPaciente(null);
+      setConsumos([]);
+    }
+    if (editingPacienteId === p.id) limpaFormularioPaciente();
+    fetchPacientes();
+  }
+
+  async function handleRestaurarPaciente(p: Paciente) {
+    const { error } = await supabase.from('pacientes').update({ arquivado_em: null }).eq('id', p.id);
+    if (error) return alert(`Erro ao restaurar: ${error.message}`);
+    fetchPacientes();
+  }
+
+  async function handleDeletePaciente(p: Paciente) {
     await supabase.from('consumos_paciente').delete().eq('paciente_id', p.id);
     const { error } = await supabase.from('pacientes').delete().eq('id', p.id);
 
     if (error) {
       alert(`Erro ao excluir paciente: ${error.message}`);
-    } else {
-      if (selectedPaciente?.id === p.id) {
-        setSelectedPaciente(null);
-        setConsumos([]);
-      }
-      if (editingPacienteId === p.id) limpaFormularioPaciente();
-      fetchPacientes();
+      return;
     }
+    if (selectedPaciente?.id === p.id) {
+      setSelectedPaciente(null);
+      setConsumos([]);
+    }
+    if (editingPacienteId === p.id) limpaFormularioPaciente();
+    fetchPacientes();
   }
 
   /* ---------------- Navegação com histórico ----------------
@@ -680,7 +716,11 @@ function Dashboard() {
   const aniversariantesHoje = pacientes.filter(p => ehAniversarianteHoje(p.data_nascimento));
   const retornosAmanha = pacientes.filter(p => ehRetornoAmanha(p.data_retorno));
 
+  const arquivados = pacientes.filter((p) => p.arquivado_em);
+
   const filteredPacientes = pacientes.filter((p) => {
+    // Arquivados só aparecem quando você pede para vê-los.
+    if (mostrarArquivados ? !p.arquivado_em : !!p.arquivado_em) return false;
     const cleanSearch = searchPaciente.replace(/\D/g, '').toLowerCase();
     const cleanCPF = (p.cpf || '').replace(/\D/g, '').toLowerCase();
     const matchCPF = cleanSearch !== '' && cleanCPF.includes(cleanSearch);
@@ -841,7 +881,7 @@ function Dashboard() {
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-serif font-bold text-amber-950">
-                    {editingPacienteId ? 'Editar Paciente' : 'Novo Paciente'}
+                    <span id="form-paciente">{editingPacienteId ? 'Editar Paciente' : 'Novo Paciente'}</span>
                   </h2>
                   {editingPacienteId && (
                     <button onClick={limpaFormularioPaciente} className="text-xs text-amber-700 hover:underline">
@@ -965,7 +1005,19 @@ function Dashboard() {
               </div>
 
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
-                <h2 className="text-lg font-serif font-bold text-amber-950 mb-3">Buscar Paciente</h2>
+                <div className="flex items-center justify-between mb-3 gap-2">
+                  <h2 className="text-lg font-serif font-bold text-amber-950">
+                    {mostrarArquivados ? 'Pacientes Arquivados' : 'Buscar Paciente'}
+                  </h2>
+                  {(arquivados.length > 0 || mostrarArquivados) && (
+                    <button
+                      onClick={() => setMostrarArquivados(!mostrarArquivados)}
+                      className="text-xs font-semibold text-amber-700 hover:underline flex-shrink-0"
+                    >
+                      {mostrarArquivados ? 'voltar aos ativos' : `ver arquivados (${arquivados.length})`}
+                    </button>
+                  )}
+                </div>
                 
                 <input
                   type="text"
@@ -998,7 +1050,16 @@ function Dashboard() {
                           </div>
                           <div className="flex items-center space-x-1">
                             <button onClick={(e) => handlePrepareEditPaciente(p, e)} className="text-xs p-1.5 hover:bg-amber-100 rounded-md">✏️</button>
-                            <button onClick={(e) => handleDeletePaciente(p, e)} className="text-xs p-1.5 hover:bg-red-100 rounded-md">🗑️</button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setGerenciandoPaciente(p);
+                              }}
+                              title="Arquivar ou excluir"
+                              className="text-xs p-1.5 hover:bg-red-100 rounded-md"
+                            >
+                              🗑️
+                            </button>
                           </div>
                         </div>
                       );
@@ -1051,8 +1112,26 @@ function Dashboard() {
                         >
                           🖨️ Imprimir
                         </button>
-                        <button onClick={() => handlePrepareEditPaciente(selectedPaciente)} className="text-xs bg-amber-100 text-amber-900 font-semibold px-3 py-2 rounded-xl hover:bg-amber-200">
+                        <button
+                          onClick={() => {
+                            handlePrepareEditPaciente(selectedPaciente);
+                            // No celular o formulário fica acima da ficha: sem
+                            // isso, clicar em Editar parecia não fazer nada.
+                            setTimeout(() => {
+                              const el = document.getElementById('form-paciente');
+                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                            }, 60);
+                          }}
+                          className="text-xs bg-amber-100 text-amber-900 font-semibold px-3 py-2 rounded-xl hover:bg-amber-200"
+                        >
                           ✏️ Editar
+                        </button>
+                        <button
+                          onClick={() => setGerenciandoPaciente(selectedPaciente)}
+                          title="Arquivar ou excluir"
+                          className="text-xs bg-red-50 text-red-800 border border-red-200 font-semibold px-3 py-2 rounded-xl hover:bg-red-100"
+                        >
+                          🗑️ Excluir
                         </button>
                       </div>
                     </div>
@@ -1264,6 +1343,16 @@ function Dashboard() {
           </div>
         )}
 
+        {gerenciandoPaciente && (
+          <ModalGerenciarPaciente
+            paciente={gerenciandoPaciente}
+            onFechar={() => setGerenciandoPaciente(null)}
+            onArquivar={handleArquivarPaciente}
+            onRestaurar={handleRestaurarPaciente}
+            onExcluir={handleDeletePaciente}
+          />
+        )}
+
         {editandoConsumo && (
           <ModalEditarConsumo
             consumo={editandoConsumo}
@@ -1402,6 +1491,116 @@ function Dashboard() {
           </div>
         )}
 
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Arquivar ou excluir um paciente                                     */
+/* ------------------------------------------------------------------ */
+
+function ModalGerenciarPaciente({
+  paciente,
+  onFechar,
+  onArquivar,
+  onRestaurar,
+  onExcluir,
+}: {
+  paciente: Paciente;
+  onFechar: () => void;
+  onArquivar: (p: Paciente) => Promise<void>;
+  onRestaurar: (p: Paciente) => Promise<void>;
+  onExcluir: (p: Paciente) => Promise<void>;
+}) {
+  const [confirmando, setConfirmando] = useState(false);
+  const [salvando, setSalvando] = useState(false);
+  const arquivado = !!paciente.arquivado_em;
+
+  async function executar(fn: (p: Paciente) => Promise<void>) {
+    setSalvando(true);
+    await fn(paciente);
+    setSalvando(false);
+    onFechar();
+  }
+
+  return (
+    <div
+      className="fixed inset-0 bg-amber-950/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 print:hidden"
+      onClick={onFechar}
+    >
+      <div
+        className="bg-white border border-amber-200 rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+        onClick={(e: { stopPropagation: () => void }) => e.stopPropagation()}
+      >
+        <div className="px-6 py-4 border-b border-amber-100">
+          <h2 className="text-lg font-serif font-bold text-amber-950">{paciente.nome.trim()}</h2>
+          <p className="text-xs text-amber-800/70 mt-0.5">
+            {arquivado ? 'Paciente arquivado' : 'O que você quer fazer com este cadastro?'}
+          </p>
+        </div>
+
+        <div className="px-6 py-4 space-y-2">
+          {arquivado ? (
+            <button
+              onClick={() => executar(onRestaurar)}
+              disabled={salvando}
+              className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+            >
+              ↩️ Restaurar — volta para a lista de pacientes
+            </button>
+          ) : (
+            <button
+              onClick={() => executar(onArquivar)}
+              disabled={salvando}
+              className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+            >
+              📦 Arquivar — sai da lista, prontuário preservado
+            </button>
+          )}
+
+          {confirmando ? (
+            <div className="p-3 border border-red-300 bg-red-50 rounded-xl space-y-2">
+              <p className="text-xs text-red-800 font-semibold leading-relaxed">
+                Excluir de vez apaga também o histórico de medicamentos aplicados, as pesagens e os
+                agendamentos desta pessoa. Não tem como desfazer.
+              </p>
+              <p className="text-xs text-red-800">
+                Use só para cadastro duplicado ou criado por engano. Se ela foi paciente de verdade,
+                arquive.
+              </p>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setConfirmando(false)}
+                  className="flex-1 text-sm font-semibold px-4 py-2 rounded-lg border border-red-200 text-red-800 hover:bg-red-100 transition-colors"
+                >
+                  Voltar
+                </button>
+                <button
+                  onClick={() => executar(onExcluir)}
+                  disabled={salvando}
+                  className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                >
+                  {salvando ? 'Excluindo…' : 'Excluir tudo'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setConfirmando(true)}
+              className="w-full text-left px-4 py-3 rounded-xl border border-red-200 text-sm font-semibold text-red-800 hover:bg-red-50 transition-colors"
+            >
+              🗑️ Cadastro duplicado ou engano — excluir de vez
+            </button>
+          )}
+        </div>
+
+        <button
+          onClick={onFechar}
+          className="w-full px-6 py-3 border-t border-amber-100 text-sm font-semibold text-amber-800 hover:bg-amber-50 transition-colors"
+        >
+          Fechar
+        </button>
       </div>
     </div>
   );
