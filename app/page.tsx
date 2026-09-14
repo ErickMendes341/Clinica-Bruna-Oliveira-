@@ -39,7 +39,14 @@ interface Paciente {
   observacoes?: string;
   data_retorno?: string;
   meta_peso?: number;
+  // Preferências de atendimento
+  pref_contato?: string | null;
+  pref_musica?: string | null;
+  pref_bebida?: string | null;
+  pref_comida?: string | null;
 }
+
+const BEBIDAS = ['Água', 'Água com gás', 'Café', 'Suco', 'Whey'];
 
 interface ConsumoPaciente {
   id: string;
@@ -99,6 +106,10 @@ function Dashboard() {
   const [observacoes, setObservacoes] = useState('');
   const [dataRetorno, setDataRetorno] = useState('');
   const [metaPeso, setMetaPeso] = useState('');
+  const [prefContato, setPrefContato] = useState('');
+  const [prefMusica, setPrefMusica] = useState('');
+  const [prefBebida, setPrefBebida] = useState('');
+  const [prefComida, setPrefComida] = useState('');
   
   const [selectedPaciente, setSelectedPaciente] = useState<Paciente | null>(null);
   
@@ -301,6 +312,10 @@ function Dashboard() {
     setObservacoes('');
     setDataRetorno('');
     setMetaPeso('');
+    setPrefContato('');
+    setPrefMusica('');
+    setPrefBebida('');
+    setPrefComida('');
   }
 
   function handlePrepareEditPaciente(p: Paciente, e?: React.MouseEvent) {
@@ -316,6 +331,10 @@ function Dashboard() {
     setObservacoes(p.observacoes || '');
     setDataRetorno(p.data_retorno || '');
     setMetaPeso(p.meta_peso ? String(p.meta_peso) : '');
+    setPrefContato(p.pref_contato || '');
+    setPrefMusica(p.pref_musica || '');
+    setPrefBebida(p.pref_bebida || '');
+    setPrefComida(p.pref_comida || '');
   }
 
   async function handleSavePaciente(e: React.FormEvent) {
@@ -341,7 +360,11 @@ function Dashboard() {
       endereco: endereco || null,
       observacoes: observacoes || null,
       data_retorno: dataRetorno || null,
-      meta_peso: metaPeso ? parseFloat(String(metaPeso).replace(',', '.')) : null
+      meta_peso: metaPeso ? parseFloat(String(metaPeso).replace(',', '.')) : null,
+      pref_contato: prefContato || null,
+      pref_musica: prefMusica || null,
+      pref_bebida: prefBebida || null,
+      pref_comida: prefComida || null
     };
 
     try {
@@ -875,6 +898,63 @@ function Dashboard() {
                     <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Objetivos esportivos, lesões prévias, suplementação em uso..."></textarea>
                   </div>
 
+                  {/* Preferências de atendimento — aparecem na agenda antes da paciente chegar */}
+                  <div className="pt-2 mt-1 border-t border-amber-100">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/60 mb-2">
+                      ✨ Preferências de atendimento
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-xs font-semibold text-amber-900 mb-1">Prefere contato por</label>
+                        <select
+                          value={prefContato}
+                          onChange={(e) => setPrefContato(e.target.value)}
+                          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+                        >
+                          <option value="">Não informado</option>
+                          <option value="ligar">📞 Ligação</option>
+                          <option value="mensagem">💬 Mensagem</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-semibold text-amber-900 mb-1">Bebida</label>
+                        <select
+                          value={prefBebida}
+                          onChange={(e) => setPrefBebida(e.target.value)}
+                          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+                        >
+                          <option value="">Não informado</option>
+                          {BEBIDAS.map((b) => (
+                            <option key={b} value={b}>{b}</option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="mt-2">
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Música</label>
+                      <input
+                        type="text"
+                        value={prefMusica}
+                        onChange={(e) => setPrefMusica(e.target.value)}
+                        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+                        placeholder="Ex: MPB, bossa nova, silêncio"
+                      />
+                    </div>
+
+                    <div className="mt-2">
+                      <label className="block text-xs font-semibold text-amber-900 mb-1">Comida / outras observações</label>
+                      <input
+                        type="text"
+                        value={prefComida}
+                        onChange={(e) => setPrefComida(e.target.value)}
+                        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+                        placeholder="Ex: castanhas, não come glúten, alergia a frutos do mar"
+                      />
+                    </div>
+                  </div>
+
                   <button
                     type="submit"
                     className={`w-full text-white font-medium py-2.5 rounded-xl text-sm transition-all shadow ${editingPacienteId ? 'bg-amber-700 hover:bg-amber-800' : 'bg-gradient-to-r from-amber-700 to-amber-900 hover:opacity-95'}`}
@@ -1002,6 +1082,37 @@ function Dashboard() {
 
                     {selectedPaciente.endereco && (
                       <p className="text-xs text-amber-900/80 mt-3">📍 <strong>Endereço:</strong> {selectedPaciente.endereco}</p>
+                    )}
+
+                    {(selectedPaciente.pref_contato ||
+                      selectedPaciente.pref_musica ||
+                      selectedPaciente.pref_bebida ||
+                      selectedPaciente.pref_comida) && (
+                      <div className="mt-4 p-4 bg-white border border-amber-300 rounded-xl">
+                        <strong className="block text-amber-900 text-xs mb-2">✨ Preferências de atendimento</strong>
+                        <div className="flex flex-wrap gap-2">
+                          {selectedPaciente.pref_contato && (
+                            <span className="text-xs bg-amber-100 text-amber-900 font-semibold px-2.5 py-1 rounded-full">
+                              {selectedPaciente.pref_contato === 'ligar' ? '📞 Prefere ligação' : '💬 Prefere mensagem'}
+                            </span>
+                          )}
+                          {selectedPaciente.pref_bebida && (
+                            <span className="text-xs bg-amber-100 text-amber-900 font-semibold px-2.5 py-1 rounded-full">
+                              🥤 {selectedPaciente.pref_bebida}
+                            </span>
+                          )}
+                          {selectedPaciente.pref_musica && (
+                            <span className="text-xs bg-amber-100 text-amber-900 font-semibold px-2.5 py-1 rounded-full">
+                              🎵 {selectedPaciente.pref_musica}
+                            </span>
+                          )}
+                          {selectedPaciente.pref_comida && (
+                            <span className="text-xs bg-amber-100 text-amber-900 font-semibold px-2.5 py-1 rounded-full">
+                              🍽️ {selectedPaciente.pref_comida}
+                            </span>
+                          )}
+                        </div>
+                      </div>
                     )}
 
                     {selectedPaciente.observacoes && (
