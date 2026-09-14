@@ -15,6 +15,7 @@ interface PainelPaciente {
   ultimo_consumo?: string;
   proximo_agendamento?: string;
   peso_atual?: number;
+  pref_contato?: string | null;
 }
 
 interface Agendamento {
@@ -25,7 +26,31 @@ interface Agendamento {
   tipo: string;
   status: string;
   observacao?: string;
-  pacientes?: { nome: string; telefone?: string } | null;
+  pacientes?: {
+    nome: string;
+    telefone?: string;
+    pref_contato?: string | null;
+    pref_musica?: string | null;
+    pref_bebida?: string | null;
+    pref_comida?: string | null;
+  } | null;
+}
+
+// As preferências viram etiquetas curtas, na ordem em que a equipe precisa
+// delas: como falar, o que servir, o que tocar, o que oferecer para comer.
+function etiquetasDePreferencia(p?: {
+  pref_contato?: string | null;
+  pref_musica?: string | null;
+  pref_bebida?: string | null;
+  pref_comida?: string | null;
+} | null) {
+  if (!p) return [];
+  const t: string[] = [];
+  if (p.pref_contato) t.push(p.pref_contato === 'ligar' ? '📞 ligação' : '💬 mensagem');
+  if (p.pref_bebida) t.push(`🥤 ${p.pref_bebida}`);
+  if (p.pref_musica) t.push(`🎵 ${p.pref_musica}`);
+  if (p.pref_comida) t.push(`🍽️ ${p.pref_comida}`);
+  return t;
 }
 
 interface Config {
@@ -121,12 +146,12 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
     const [{ data: pac }, { data: ag }, { data: cfg }] = await Promise.all([
       supabase
         .from('painel_pacientes')
-        .select('id,nome,telefone,dias_sem_vir,ultimo_consumo,proximo_agendamento,peso_atual')
+        .select('id,nome,telefone,dias_sem_vir,ultimo_consumo,proximo_agendamento,peso_atual,pref_contato')
         .is('arquivado_em', null)
         .order('dias_sem_vir', { ascending: false }),
       supabase
         .from('agendamentos')
-        .select('*, pacientes(nome, telefone)')
+        .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida)')
         .gte('data', hoje)
         .lte('data', somaDias(hoje, 30))
         .in('status', ['agendado', 'confirmado'])
@@ -144,7 +169,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   const carregarDia = useCallback(async (d: string) => {
     const { data } = await supabase
       .from('agendamentos')
-      .select('*, pacientes(nome, telefone)')
+      .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida)')
       .eq('data', d)
       .in('status', ['agendado', 'confirmado'])
       .order('hora', { ascending: true });
@@ -455,6 +480,24 @@ function DetalheAgendamento({
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {ag.observacao}
             </p>
+          )}
+
+          {etiquetasDePreferencia(ag.pacientes).length > 0 && (
+            <div className="mt-3 p-3 bg-white border border-amber-300 rounded-lg">
+              <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/70 mb-1.5">
+                ✨ Deixar pronto para ela
+              </p>
+              <div className="flex flex-wrap gap-1.5">
+                {etiquetasDePreferencia(ag.pacientes).map((t) => (
+                  <span
+                    key={t}
+                    className="text-xs bg-amber-100 text-amber-900 font-semibold px-2.5 py-1 rounded-full"
+                  >
+                    {t}
+                  </span>
+                ))}
+              </div>
+            </div>
           )}
         </div>
 
@@ -1022,6 +1065,20 @@ function LinhaAgendamento({
           {dataCurta(ag.data)}
           {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} • {ag.tipo}
         </p>
+
+        {/* O que deixar pronto antes dela chegar */}
+        {etiquetasDePreferencia(ag.pacientes).length > 0 && (
+          <div className="flex flex-wrap gap-1 mt-1.5">
+            {etiquetasDePreferencia(ag.pacientes).map((t) => (
+              <span
+                key={t}
+                className="text-[10px] bg-amber-100 text-amber-900 font-semibold px-2 py-0.5 rounded-full"
+              >
+                {t}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
@@ -1087,6 +1144,7 @@ function LinhaPaciente({
         <p className={`text-xs mt-0.5 ${tom === 'alerta' ? 'text-red-700 font-semibold' : 'text-amber-800/70'}`}>
           {p.dias_sem_vir === 0 ? 'veio hoje' : `há ${p.dias_sem_vir} dias sem vir`}
           {p.peso_atual ? ` • ${Number(p.peso_atual).toFixed(1).replace('.', ',')} kg` : ''}
+          {p.pref_contato === 'ligar' ? ' • 📞 prefere ligação' : ''}
         </p>
       </div>
       {link && (
