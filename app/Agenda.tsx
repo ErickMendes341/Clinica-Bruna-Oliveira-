@@ -109,7 +109,7 @@ function zap(telefone: string | undefined, msg: string) {
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
 
-/* Cada procedimento carrega quem atende e a cor dela na agenda.
+/* Cada procedimento carrega quem atende e a cor na agenda.
    As cores foram escolhidas para se separarem também no daltonismo, e
    nunca aparecem sozinhas: o nome do procedimento e da profissional vêm
    escritos do lado. */
@@ -586,7 +586,7 @@ function DetalheAgendamento({
           {etiquetasDePreferencia(ag.pacientes).length > 0 && (
             <div className="mt-3 p-3 bg-white border border-amber-300 rounded-lg">
               <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/70 mb-1.5">
-                ✨ Deixar pronto para ela
+                ✨ Deixar pronto para o atendimento
               </p>
               <div className="flex flex-wrap gap-1.5">
                 {etiquetasDePreferencia(ag.pacientes).map((t) => (
@@ -736,7 +736,7 @@ function DiaDaAgenda({
 }) {
   // A clínica trabalha por hora cheia: dentro das 9h podem estar a consulta
   // nova das 9:15 e a medicação das 9:20. Por isso cada cartão é uma HORA,
-  // e os pacientes aparecem dentro dela no minuto exato.
+  // e os pacientes aparecem dentro da hora no minuto exato.
   const primeira = Math.floor(paraMin(config.hora_inicio) / 60);
   const ultima = Math.ceil(paraMin(config.hora_fim) / 60);
 
@@ -908,6 +908,20 @@ function DiaDaAgenda({
                           </p>
                           {ag.observacao && (
                             <p className="text-[10px] text-amber-800/60 truncate">{ag.observacao}</p>
+                          )}
+
+                          {/* O que deixar pronto antes do paciente chegar */}
+                          {etiquetasDePreferencia(ag.pacientes).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {etiquetasDePreferencia(ag.pacientes).map((t) => (
+                                <span
+                                  key={t}
+                                  className="text-[9px] bg-amber-100 text-amber-900 font-semibold px-1.5 py-0.5 rounded-full max-w-full truncate"
+                                >
+                                  {t}
+                                </span>
+                              ))}
+                            </div>
                           )}
                         </button>
                       ))}
@@ -1186,7 +1200,7 @@ function LinhaAgendamento({
           {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
 
-        {/* O que deixar pronto antes dela chegar */}
+        {/* O que deixar pronto antes do paciente chegar */}
         {etiquetasDePreferencia(ag.pacientes).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {etiquetasDePreferencia(ag.pacientes).map((t) => (
