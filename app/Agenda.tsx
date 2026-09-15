@@ -56,7 +56,8 @@ function etiquetasDePreferencia(p?: {
 interface Config {
   hora_inicio: string;
   hora_fim: string;
-  duracao_min: number;
+  // De quantos em quantos minutos o seletor oferece horário (9:15, 9:20…).
+  passo_min: number;
 }
 
 /* ------------------------------------------------------------------ */
@@ -100,10 +101,6 @@ function paraMin(hhmm: string) {
   return Number(h) * 60 + Number(m);
 }
 
-function paraHHMM(min: number) {
-  return `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
-}
-
 function zap(telefone: string | undefined, msg: string) {
   if (!telefone) return null;
   const num = telefone.replace(/\D/g, '');
@@ -112,11 +109,72 @@ function zap(telefone: string | undefined, msg: string) {
 }
 
 const TIPOS = [
+  { id: 'consulta_nova', label: 'Consulta nova' },
   { id: 'retorno', label: 'Retorno' },
-  { id: 'consulta', label: 'Consulta' },
-  { id: 'procedimento', label: 'Procedimento' },
-  { id: 'aplicacao', label: 'Aplicação' },
+  { id: 'medicacao', label: 'Medicação' },
+  { id: 'bodyshape', label: 'BodyShape' },
+  { id: 'outros', label: 'Outros' },
 ];
+
+function rotuloTipo(id: string) {
+  return TIPOS.find((t) => t.id === id)?.label ?? id;
+}
+
+/* ------------------------------------------------------------------ */
+/* Seletor de horário — só dentro do funcionamento da clínica          */
+/* ------------------------------------------------------------------ */
+
+function SeletorHora({
+  hora,
+  setHora,
+  config,
+}: {
+  hora: string;
+  setHora: (v: string) => void;
+  config: Config;
+}) {
+  const primeira = Math.floor(paraMin(config.hora_inicio) / 60);
+  const ultima = Math.ceil(paraMin(config.hora_fim) / 60);
+  const passo = config.passo_min > 0 ? config.passo_min : 5;
+
+  const horas: number[] = [];
+  for (let h = primeira; h < ultima; h++) horas.push(h);
+
+  const minutos: number[] = [];
+  for (let m = 0; m < 60; m += passo) minutos.push(m);
+
+  const hh = hora ? hora.slice(0, 2) : '';
+  const mm = hora ? hora.slice(3, 5) : '';
+
+  return (
+    <div className="flex gap-1.5">
+      <select
+        value={hh}
+        onChange={(e) => setHora(e.target.value ? `${e.target.value}:${mm || '00'}` : '')}
+        className="flex-1 px-2 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+      >
+        <option value="">Sem hora</option>
+        {horas.map((h) => (
+          <option key={h} value={String(h).padStart(2, '0')}>
+            {String(h).padStart(2, '0')}h
+          </option>
+        ))}
+      </select>
+      <select
+        value={mm}
+        disabled={!hh}
+        onChange={(e) => setHora(`${hh}:${e.target.value}`)}
+        className="flex-1 px-2 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none disabled:opacity-40"
+      >
+        {minutos.map((m) => (
+          <option key={m} value={String(m).padStart(2, '0')}>
+            {String(m).padStart(2, '0')}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 /* ------------------------------------------------------------------ */
 /* Componente principal                                                */
@@ -134,7 +192,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   // Visão de um dia específico
   const [dia, setDia] = useState(hojeISO());
   const [agendaDia, setAgendaDia] = useState<Agendamento[]>([]);
-  const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', duracao_min: 30 });
+  const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
   const [editandoConfig, setEditandoConfig] = useState(false);
   const [diaAberto, setDiaAberto] = useState(false);
   const [ultimaAtualizacao, setUltimaAtualizacao] = useState<Date | null>(null);
@@ -156,7 +214,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         .lte('data', somaDias(hoje, 30))
         .in('status', ['agendado', 'confirmado'])
         .order('data', { ascending: true }),
-      supabase.from('config_agenda').select('hora_inicio,hora_fim,duracao_min').eq('id', 1).limit(1),
+      supabase.from('config_agenda').select('hora_inicio,hora_fim,passo_min').eq('id', 1).limit(1),
     ]);
 
     setPainel((pac as PainelPaciente[]) || []);
@@ -291,6 +349,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         {novoAberto && (
           <FormNovoAgendamento
             pacientes={painel}
+            config={config}
             dataInicial={preset.data}
             horaInicial={preset.hora}
             onPronto={() => {
@@ -395,6 +454,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
       {agSelecionado && (
         <DetalheAgendamento
           ag={agSelecionado}
+          config={config}
           onFechar={() => setAgSelecionado(null)}
           onAbrirPaciente={onAbrirPaciente}
           onMudou={() => {
@@ -413,11 +473,13 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
 
 function DetalheAgendamento({
   ag,
+  config,
   onFechar,
   onAbrirPaciente,
   onMudou,
 }: {
   ag: Agendamento;
+  config: Config;
   onFechar: () => void;
   onAbrirPaciente?: (id: string) => void;
   onMudou: () => void;
@@ -474,7 +536,7 @@ function DetalheAgendamento({
           <h2 className="text-lg font-serif font-bold text-amber-950">{nome}</h2>
           <p className="text-xs text-amber-800/70 mt-0.5 capitalize">
             {porExtenso(ag.data)}
-            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'} · {ag.tipo}
+            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'} · {rotuloTipo(ag.tipo)}
           </p>
           {ag.observacao && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -518,20 +580,13 @@ function DetalheAgendamento({
           {remarcando ? (
             <div className="p-3 border border-amber-300 rounded-xl bg-amber-50/60 space-y-2">
               <p className="text-xs font-semibold text-amber-900">Nova data e hora</p>
-              <div className="flex gap-2">
-                <input
-                  type="date"
-                  value={novaData}
-                  onChange={(e) => setNovaData(e.target.value)}
-                  className="flex-1 px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
-                />
-                <input
-                  type="time"
-                  value={novaHora}
-                  onChange={(e) => setNovaHora(e.target.value)}
-                  className="px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
-                />
-              </div>
+              <input
+                type="date"
+                value={novaData}
+                onChange={(e) => setNovaData(e.target.value)}
+                className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+              />
+              <SeletorHora hora={novaHora} setHora={setNovaHora} config={config} />
               <div className="flex gap-2">
                 <button
                   onClick={() => setRemarcando(false)}
@@ -640,41 +695,39 @@ function DiaDaAgenda({
   onEscolherHorario: (data: string, hora?: string) => void;
   onSelecionarAgendamento: (ag: Agendamento) => void;
 }) {
-  const inicio = paraMin(config.hora_inicio);
-  const fim = paraMin(config.hora_fim);
-  const passo = config.duracao_min;
+  // A clínica trabalha por hora cheia: dentro das 9h podem estar a consulta
+  // nova das 9:15 e a medicação das 9:20. Por isso cada cartão é uma HORA,
+  // e os pacientes aparecem dentro dela no minuto exato.
+  const primeira = Math.floor(paraMin(config.hora_inicio) / 60);
+  const ultima = Math.ceil(paraMin(config.hora_fim) / 60);
 
-  const slots: number[] = [];
-  if (passo > 0 && fim > inicio) {
-    for (let t = inicio; t + passo <= fim; t += passo) slots.push(t);
-  }
+  const horas: number[] = [];
+  for (let h = primeira; h < ultima; h++) horas.push(h);
 
-  // Vários pacientes podem ocupar o mesmo horário — protocolos diferentes
-  // acontecem em paralelo. Por isso cada faixa guarda uma lista, não um só.
-  const porSlot = new Map<number, Agendamento[]>();
+  const porHora = new Map<number, Agendamento[]>();
   const semHorario: Agendamento[] = [];
   for (const a of agendaDia) {
     if (!a.hora) {
       semHorario.push(a);
       continue;
     }
-    const m = paraMin(a.hora);
-    const slot = slots.find((s) => m >= s && m < s + passo);
-    if (slot === undefined) {
+    const h = Math.floor(paraMin(a.hora) / 60);
+    if (h < primeira || h >= ultima) {
       semHorario.push(a);
       continue;
     }
-    const lista = porSlot.get(slot);
+    const lista = porHora.get(h);
     if (lista) lista.push(a);
-    else porSlot.set(slot, [a]);
+    else porHora.set(h, [a]);
   }
+  // Dentro da hora, em ordem de chegada.
+  porHora.forEach((lista) => lista.sort((x, y) => (x.hora || '').localeCompare(y.hora || '')));
 
-  const vazios = slots.filter((s) => !porSlot.has(s)).length;
+  const horasVazias = horas.filter((h) => !porHora.has(h)).length;
   const ehHoje = dia === hojeISO();
 
   return (
     <div className="bg-white border border-amber-200/70 rounded-2xl shadow-sm overflow-hidden">
-      {/* Cabeçalho: clicar abre e fecha a grade */}
       <button
         onClick={() => setAberto(!aberto)}
         className="w-full px-6 py-4 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left"
@@ -728,7 +781,7 @@ function DiaDaAgenda({
                 onClick={() => setEditandoConfig(!editandoConfig)}
                 className="ml-auto text-[11px] font-semibold text-amber-700 hover:text-amber-900"
               >
-                ⚙️ {config.hora_inicio.slice(0, 5)}–{config.hora_fim.slice(0, 5)} · {config.duracao_min} min
+                ⚙️ {config.hora_inicio.slice(0, 5)}–{config.hora_fim.slice(0, 5)}
               </button>
             </div>
 
@@ -737,40 +790,46 @@ function DiaDaAgenda({
             )}
 
             <p className="text-xs text-amber-800/70 mt-3">
-              {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'} · {vazios} horário
-              {vazios === 1 ? '' : 's'} sem ninguém
+              {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'} · {horasVazias} hora
+              {horasVazias === 1 ? '' : 's'} sem ninguém
             </p>
           </div>
 
-          {slots.length === 0 ? (
+          {horas.length === 0 ? (
             <p className="px-6 py-6 text-xs text-amber-800/60 text-center">
               Horário de funcionamento inválido. Ajuste em ⚙️ acima.
             </p>
           ) : (
-            <div className="p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-2">
-              {slots.map((s) => {
-                const lista = porSlot.get(s);
+            <div className="p-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {horas.map((h) => {
+                const lista = porHora.get(h);
+                const rotulo = `${String(h).padStart(2, '0')}:00`;
 
                 if (!lista || lista.length === 0) {
                   return (
                     <button
-                      key={s}
-                      onClick={() => onEscolherHorario(dia, paraHHMM(s))}
+                      key={h}
+                      onClick={() => onEscolherHorario(dia, rotulo)}
                       className="text-left px-3 py-2.5 rounded-xl border border-dashed border-amber-300 text-amber-900 hover:bg-amber-50 hover:border-amber-500 transition-colors"
                     >
-                      <p className="text-[11px] font-bold tabular-nums text-amber-800">{paraHHMM(s)}</p>
+                      <p className="text-[11px] font-bold tabular-nums text-amber-800">
+                        {String(h).padStart(2, '0')}h
+                      </p>
                       <p className="text-xs text-amber-800/60">livre</p>
                     </button>
                   );
                 }
 
                 return (
-                  <div key={s} className="px-3 py-2.5 rounded-xl bg-amber-900 text-amber-50 flex flex-col gap-1.5">
+                  <div key={h} className="px-3 py-2.5 rounded-xl bg-amber-900 text-amber-50 flex flex-col gap-1.5">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-bold tabular-nums text-amber-200">{paraHHMM(s)}</p>
+                      <p className="text-[11px] font-bold tabular-nums text-amber-200">
+                        {String(h).padStart(2, '0')}h
+                        <span className="font-normal text-amber-300/70"> · {lista.length}</span>
+                      </p>
                       <button
-                        onClick={() => onEscolherHorario(dia, paraHHMM(s))}
-                        title="Agendar mais um paciente neste horário"
+                        onClick={() => onEscolherHorario(dia, rotulo)}
+                        title="Encaixar mais um paciente nesta hora"
                         className="text-amber-200 hover:text-white text-sm font-bold leading-none px-1.5 rounded hover:bg-amber-800 transition-colors"
                       >
                         +
@@ -785,20 +844,15 @@ function DiaDaAgenda({
                         className="text-left -mx-1 px-1 py-0.5 rounded hover:bg-amber-800 transition-colors"
                       >
                         <p className="text-xs font-semibold truncate">
+                          <span className="tabular-nums text-amber-200">{ag.hora?.slice(0, 5)}</span>{' '}
                           {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
                         </p>
-                        <p className="text-[10px] text-amber-200/80 capitalize truncate">
-                          {ag.tipo}
+                        <p className="text-[10px] text-amber-200/80 truncate">
+                          {rotuloTipo(ag.tipo)}
                           {ag.observacao ? ` · ${ag.observacao}` : ''}
                         </p>
                       </button>
                     ))}
-
-                    {lista.length > 1 && (
-                      <p className="text-[10px] text-amber-300/70 border-t border-amber-800 pt-1">
-                        {lista.length} em paralelo
-                      </p>
-                    )}
                   </div>
                 );
               })}
@@ -817,7 +871,7 @@ function DiaDaAgenda({
                     onClick={() => onSelecionarAgendamento(a)}
                     className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-3 py-1.5 rounded-lg transition-colors"
                   >
-                    {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {a.tipo}
+                    {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {rotuloTipo(a.tipo)}
                   </button>
                 ))}
               </div>
@@ -840,12 +894,12 @@ function EditorConfig({
 }) {
   const [inicio, setInicio] = useState(config.hora_inicio.slice(0, 5));
   const [fim, setFim] = useState(config.hora_fim.slice(0, 5));
-  const [dur, setDur] = useState(String(config.duracao_min));
+  const [passo, setPasso] = useState(String(config.passo_min));
   const [salvando, setSalvando] = useState(false);
 
   async function salvar() {
     setSalvando(true);
-    const novo = { hora_inicio: inicio, hora_fim: fim, duracao_min: Number(dur) || 30 };
+    const novo = { hora_inicio: inicio, hora_fim: fim, passo_min: Number(passo) || 5 };
     await supabase.from('config_agenda').update(novo).eq('id', 1);
     setConfig(novo as Config);
     setSalvando(false);
@@ -855,7 +909,7 @@ function EditorConfig({
   return (
     <div className="mt-3 p-3 bg-amber-50/60 border border-amber-200 rounded-xl">
       <p className="text-[11px] text-amber-800/70 mb-2">
-        Vale para a clínica toda — a equipe vê a mesma grade.
+        Vale para a clínica toda — a equipe vê a mesma agenda.
       </p>
       <div className="flex flex-wrap items-end gap-2">
         <div>
@@ -877,15 +931,15 @@ function EditorConfig({
           />
         </div>
         <div>
-          <label className="block text-[10px] font-semibold text-amber-900 mb-1">Cada consulta</label>
+          <label className="block text-[10px] font-semibold text-amber-900 mb-1">Horários de</label>
           <select
-            value={dur}
-            onChange={(e) => setDur(e.target.value)}
+            value={passo}
+            onChange={(e) => setPasso(e.target.value)}
             className="px-2 py-1.5 border border-amber-200 rounded-lg text-sm bg-white outline-none"
           >
-            {[15, 20, 30, 40, 45, 60, 90].map((d) => (
+            {[5, 10, 15, 20, 30].map((d) => (
               <option key={d} value={d}>
-                {d} min
+                {d} em {d} min
               </option>
             ))}
           </select>
@@ -1041,7 +1095,7 @@ function LinhaAgendamento({
   const tel = ag.pacientes?.telefone;
   const link = zap(
     tel,
-    `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu ${ag.tipo} do dia ${dataCurta(ag.data)}. Podemos confirmar?`
+    `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloTipo(ag.tipo)}) do dia ${dataCurta(ag.data)}. Podemos confirmar?`
   );
 
   return (
@@ -1063,7 +1117,7 @@ function LinhaAgendamento({
         <p className="text-xs text-amber-800/70 mt-0.5">
           {mostrarDia && <span className="capitalize">{diaDaSemana(ag.data)}, </span>}
           {dataCurta(ag.data)}
-          {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} • {ag.tipo}
+          {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} • {rotuloTipo(ag.tipo)}
         </p>
 
         {/* O que deixar pronto antes dela chegar */}
@@ -1167,11 +1221,13 @@ function LinhaPaciente({
 
 function FormNovoAgendamento({
   pacientes,
+  config,
   dataInicial,
   horaInicial,
   onPronto,
 }: {
   pacientes: PainelPaciente[];
+  config: Config;
   dataInicial?: string;
   horaInicial?: string;
   onPronto: () => void;
@@ -1407,13 +1463,8 @@ function FormNovoAgendamento({
           />
         </div>
         <div>
-          <label className="block text-xs font-semibold text-amber-900 mb-1">Hora (opcional)</label>
-          <input
-            type="time"
-            value={hora}
-            onChange={(e) => setHora(e.target.value)}
-            className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
-          />
+          <label className="block text-xs font-semibold text-amber-900 mb-1">Horário</label>
+          <SeletorHora hora={hora} setHora={setHora} config={config} />
         </div>
         <div className="col-span-2 sm:col-span-1">
           <label className="block text-xs font-semibold text-amber-900 mb-1">Tipo</label>
