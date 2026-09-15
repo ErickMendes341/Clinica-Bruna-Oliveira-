@@ -20,15 +20,15 @@ interface Config {
 }
 
 const TIPOS = [
-  { id: 'consulta_nova', label: 'Consulta nova', profissional: 'Bruna', cor: '#1d4ed8' },
-  { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8' },
-  { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8' },
-  { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8' },
-  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c' },
-  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c' },
-  { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d' },
-  { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf' },
-  { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c' },
+  { id: 'consulta_nova', label: 'Consulta nova', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
+  { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
+  { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
+  { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
+  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
+  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
+  { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#4ade80' },
+  { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
+  { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
 ];
 
 const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
@@ -358,22 +358,24 @@ export default function AgendarRetorno({
             const zap = linkZap(ag);
 
             return (
-              <div key={ag.id} className="border-l-4" style={{ borderLeftColor: info.cor }}>
+              <div
+                key={ag.id}
+                className="border-l-4"
+                style={{ borderLeftColor: info.cor, backgroundColor: info.fundo, color: '#1c1917' }}
+              >
                 <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                   <div className="min-w-0">
-                    <p className="text-sm font-serif font-bold text-amber-950 capitalize">
+                    <p className="text-sm font-serif font-bold capitalize">
                       {porExtenso(ag.data)}
                       {ag.hora ? (
-                        <span className="font-sans tabular-nums text-amber-800"> · {ag.hora.slice(0, 5)}</span>
+                        <span className="font-sans tabular-nums opacity-80"> · {ag.hora.slice(0, 5)}</span>
                       ) : (
-                        <span className="font-sans text-amber-800/60"> · sem hora</span>
+                        <span className="font-sans opacity-60"> · sem hora</span>
                       )}
                     </p>
                     <p className="text-xs mt-0.5">
-                      <span className="font-semibold" style={{ color: info.cor }}>
-                        {info.label}
-                      </span>
-                      {ag.profissional && <span className="text-amber-800/70"> · {ag.profissional}</span>}
+                      <span className="font-bold">{info.label}</span>
+                      {ag.profissional && <span className="opacity-80"> · {ag.profissional}</span>}
                       {ag.status === 'confirmado' && (
                         <span className="text-emerald-700 font-semibold"> · confirmado</span>
                       )}
@@ -393,13 +395,13 @@ export default function AgendarRetorno({
                     )}
                     <button
                       onClick={() => (remarcandoId === ag.id ? setRemarcandoId(null) : abrirRemarcacao(ag))}
-                      className="text-[11px] bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                      className="text-[11px] bg-white/80 hover:bg-white text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
                     >
                       Remarcar
                     </button>
                     <button
                       onClick={() => cancelar(ag)}
-                      className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-50 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                      className="text-[11px] bg-white/80 hover:bg-white text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
                     >
                       Cancelar
                     </button>
@@ -407,7 +409,7 @@ export default function AgendarRetorno({
                 </div>
 
                 {remarcandoId === ag.id && (
-                  <div className="px-4 pb-4 pt-1 bg-amber-50/60">
+                  <div className="px-4 pb-4 pt-1 bg-white/80">
                     {camposDeAgendamento}
                     <div className="flex gap-2 mt-2">
                       <button
