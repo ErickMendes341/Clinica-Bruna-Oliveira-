@@ -26,6 +26,7 @@ interface Agendamento {
   tipo: string;
   status: string;
   observacao?: string;
+  profissional?: string | null;
   pacientes?: {
     nome: string;
     telefone?: string;
@@ -108,16 +109,37 @@ function zap(telefone: string | undefined, msg: string) {
   return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
 }
 
+/* Cada procedimento carrega quem atende e a cor dela na agenda.
+   As cores foram escolhidas para se separarem também no daltonismo, e
+   nunca aparecem sozinhas: o nome do procedimento e da profissional vêm
+   escritos do lado. */
 const TIPOS = [
-  { id: 'consulta_nova', label: 'Consulta nova' },
-  { id: 'retorno', label: 'Retorno' },
-  { id: 'medicacao', label: 'Medicação' },
-  { id: 'bodyshape', label: 'BodyShape' },
-  { id: 'outros', label: 'Outros' },
+  { id: 'consulta_nova', label: 'Consulta nova', profissional: 'Bruna', cor: '#1d4ed8' },
+  { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8' },
+  { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8' },
+  { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8' },
+  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c' },
+  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c' },
+  { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d' },
+  { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf' },
+  { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c' },
 ];
 
+const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
+
+const LEGENDA = [
+  { nome: 'Bruna', cor: '#1d4ed8' },
+  { nome: 'Nicole', cor: '#c2410c' },
+  { nome: 'Ludimila', cor: '#15803d' },
+  { nome: 'BodyShape', cor: '#a21caf' },
+];
+
+function infoTipo(id: string) {
+  return TIPOS.find((t) => t.id === id) ?? TIPOS[TIPOS.length - 1];
+}
+
 function rotuloTipo(id: string) {
-  return TIPOS.find((t) => t.id === id)?.label ?? id;
+  return infoTipo(id).label;
 }
 
 /* ------------------------------------------------------------------ */
@@ -541,8 +563,20 @@ function DetalheAgendamento({
           <h2 className="text-lg font-serif font-bold text-amber-950">{nome}</h2>
           <p className="text-xs text-amber-800/70 mt-0.5 capitalize">
             {porExtenso(ag.data)}
-            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'} · {rotuloTipo(ag.tipo)}
+            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'}
           </p>
+          <div className="flex items-center gap-2 mt-1.5">
+            <span
+              className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+              style={{ backgroundColor: infoTipo(ag.tipo).cor }}
+            />
+            <span className="text-xs font-semibold" style={{ color: infoTipo(ag.tipo).cor }}>
+              {rotuloTipo(ag.tipo)}
+            </span>
+            {ag.profissional && (
+              <span className="text-xs text-amber-800/70">· com {ag.profissional}</span>
+            )}
+          </div>
           {ag.observacao && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {ag.observacao}
@@ -800,6 +834,18 @@ function DiaDaAgenda({
             </p>
           </div>
 
+          <div className="px-4 pt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+            {LEGENDA.map((l) => (
+              <span key={l.nome} className="flex items-center gap-1.5 text-[11px] font-semibold text-amber-900">
+                <span
+                  className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                  style={{ backgroundColor: l.cor }}
+                />
+                {l.nome}
+              </span>
+            ))}
+          </div>
+
           {horas.length === 0 ? (
             <p className="px-6 py-6 text-xs text-amber-800/60 text-center">
               Horário de funcionamento inválido. Ajuste em ⚙️ acima.
@@ -825,39 +871,47 @@ function DiaDaAgenda({
                   );
                 }
 
+                const info = (a: Agendamento) => infoTipo(a.tipo);
+
                 return (
-                  <div key={h} className="px-3 py-2.5 rounded-xl bg-amber-900 text-amber-50 flex flex-col gap-1.5">
-                    <div className="flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-bold tabular-nums text-amber-200">
+                  <div key={h} className="rounded-xl border border-amber-200 bg-white overflow-hidden">
+                    <div className="px-3 py-1.5 bg-amber-100/70 flex items-center justify-between gap-2">
+                      <p className="text-[11px] font-bold tabular-nums text-amber-900">
                         {String(h).padStart(2, '0')}h
-                        <span className="font-normal text-amber-300/70"> · {lista.length}</span>
+                        <span className="font-normal text-amber-800/60"> · {lista.length}</span>
                       </p>
                       <button
                         onClick={() => onEscolherHorario(dia, rotulo)}
                         title="Encaixar mais um paciente nesta hora"
-                        className="text-amber-200 hover:text-white text-sm font-bold leading-none px-1.5 rounded hover:bg-amber-800 transition-colors"
+                        className="text-amber-800 hover:text-amber-950 text-sm font-bold leading-none px-1.5 rounded hover:bg-amber-200 transition-colors"
                       >
                         +
                       </button>
                     </div>
 
-                    {lista.map((ag) => (
-                      <button
-                        key={ag.id}
-                        onClick={() => onSelecionarAgendamento(ag)}
-                        title="Ver, remarcar, desmarcar ou excluir"
-                        className="text-left -mx-1 px-1 py-0.5 rounded hover:bg-amber-800 transition-colors"
-                      >
-                        <p className="text-xs font-semibold truncate">
-                          <span className="tabular-nums text-amber-200">{ag.hora?.slice(0, 5)}</span>{' '}
-                          {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
-                        </p>
-                        <p className="text-[10px] text-amber-200/80 truncate">
-                          {rotuloTipo(ag.tipo)}
-                          {ag.observacao ? ` · ${ag.observacao}` : ''}
-                        </p>
-                      </button>
-                    ))}
+                    <div className="divide-y divide-amber-100">
+                      {lista.map((ag) => (
+                        <button
+                          key={ag.id}
+                          onClick={() => onSelecionarAgendamento(ag)}
+                          title="Ver, remarcar, desmarcar ou excluir"
+                          className="w-full text-left px-3 py-2 border-l-4 hover:bg-amber-50 transition-colors"
+                          style={{ borderLeftColor: info(ag).cor }}
+                        >
+                          <p className="text-xs font-semibold text-amber-950 truncate">
+                            <span className="tabular-nums text-amber-800/70">{ag.hora?.slice(0, 5)}</span>{' '}
+                            {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
+                          </p>
+                          <p className="text-[10px] font-semibold truncate" style={{ color: info(ag).cor }}>
+                            {info(ag).label}
+                            {ag.profissional ? ` · ${ag.profissional}` : ''}
+                          </p>
+                          {ag.observacao && (
+                            <p className="text-[10px] text-amber-800/60 truncate">{ag.observacao}</p>
+                          )}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 );
               })}
@@ -1104,7 +1158,10 @@ function LinhaAgendamento({
   );
 
   return (
-    <div className="px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-amber-50/40 transition-colors">
+    <div
+      className="px-6 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-amber-50/40 transition-colors border-l-4"
+      style={{ borderLeftColor: infoTipo(ag.tipo).cor }}
+    >
       <div className="min-w-0">
         <div className="flex items-center gap-2 flex-wrap">
           <button
@@ -1122,7 +1179,11 @@ function LinhaAgendamento({
         <p className="text-xs text-amber-800/70 mt-0.5">
           {mostrarDia && <span className="capitalize">{diaDaSemana(ag.data)}, </span>}
           {dataCurta(ag.data)}
-          {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} • {rotuloTipo(ag.tipo)}
+          {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} •{' '}
+          <span className="font-semibold" style={{ color: infoTipo(ag.tipo).cor }}>
+            {rotuloTipo(ag.tipo)}
+          </span>
+          {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
 
         {/* O que deixar pronto antes dela chegar */}
@@ -1244,9 +1305,16 @@ function FormNovoAgendamento({
   const [data, setData] = useState(dataInicial || hojeISO());
   const [hora, setHora] = useState(horaInicial || '');
   const [tipo, setTipo] = useState('retorno');
+  const [profissional, setProfissional] = useState('Bruna');
   const [obs, setObs] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+
+  // Escolher o procedimento já diz quem atende; dá para trocar se alguém cobrir.
+  function escolherTipo(novoTipo: string) {
+    setTipo(novoTipo);
+    setProfissional(infoTipo(novoTipo).profissional);
+  }
 
   // Paciente que ainda não existe: cadastra e agenda de uma vez só.
   const [modoNovo, setModoNovo] = useState(false);
@@ -1322,6 +1390,7 @@ function FormNovoAgendamento({
         data,
         hora: hora || null,
         tipo,
+        profissional: profissional || null,
         observacao: obs || null,
         criado_por: sessao.user?.id ?? null,
       },
@@ -1499,16 +1568,32 @@ function FormNovoAgendamento({
           <label className="block text-xs font-semibold text-amber-900 mb-1">Horário</label>
           <SeletorHora hora={hora} setHora={setHora} config={config} />
         </div>
-        <div className="col-span-2 sm:col-span-1">
-          <label className="block text-xs font-semibold text-amber-900 mb-1">Tipo</label>
+        <div className="col-span-2">
+          <label className="block text-xs font-semibold text-amber-900 mb-1">Procedimento</label>
           <select
             value={tipo}
-            onChange={(e) => setTipo(e.target.value)}
-            className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+            onChange={(e) => escolherTipo(e.target.value)}
+            className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none font-semibold"
+            style={{ borderColor: infoTipo(tipo).cor, color: infoTipo(tipo).cor }}
           >
             {TIPOS.map((t) => (
               <option key={t.id} value={t.id}>
                 {t.label}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="col-span-2 sm:col-span-1">
+          <label className="block text-xs font-semibold text-amber-900 mb-1">Quem atende</label>
+          <select
+            value={profissional}
+            onChange={(e) => setProfissional(e.target.value)}
+            className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+          >
+            <option value="">Não definido</option>
+            {PROFISSIONAIS.map((n) => (
+              <option key={n} value={n}>
+                {n}
               </option>
             ))}
           </select>
