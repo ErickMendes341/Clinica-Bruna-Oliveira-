@@ -188,7 +188,7 @@ export default function AgendarRetorno({
     setErro('');
   }
 
-  // ACRESCENTA uma consulta. Não cancela nada: a mesma paciente pode ter
+  // ACRESCENTA uma consulta. Não cancela nada: o mesmo paciente pode ter
   // medicação semana que vem e retorno no mês seguinte ao mesmo tempo.
   async function agendar() {
     setErro('');
@@ -350,7 +350,7 @@ export default function AgendarRetorno({
       </div>
 
       {lista.length === 0 ? (
-        <p className="px-5 py-4 text-xs text-amber-800/70">Nenhuma consulta marcada para esta paciente.</p>
+        <p className="px-5 py-4 text-xs text-amber-800/70">Nenhuma consulta marcada para este paciente.</p>
       ) : (
         <div className="divide-y divide-amber-100">
           {lista.map((ag) => {
