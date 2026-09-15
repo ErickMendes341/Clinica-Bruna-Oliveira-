@@ -6,11 +6,17 @@ import { supabase } from '@/lib/supabase';
 interface Ag {
   id: string;
   data: string;
-  hora?: string;
+  hora?: string | null;
   tipo: string;
   status: string;
-  observacao?: string;
+  observacao?: string | null;
   profissional?: string | null;
+}
+
+interface Config {
+  hora_inicio: string;
+  hora_fim: string;
+  passo_min: number;
 }
 
 const TIPOS = [
@@ -31,14 +37,31 @@ function infoTipo(id: string) {
   return TIPOS.find((t) => t.id === id) ?? TIPOS[TIPOS.length - 1];
 }
 
-function rotuloTipo(id: string) {
-  return infoTipo(id).label;
+/* ------------------------------------------------------------------ */
+/* Datas e horas                                                       */
+/* ------------------------------------------------------------------ */
+
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-interface Config {
-  hora_inicio: string;
-  hora_fim: string;
-  passo_min: number;
+function emDias(dias: number) {
+  const d = new Date();
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function porExtenso(iso: string) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+  });
+}
+
+function primeiroNome(nome?: string) {
+  return (nome || '').trim().split(/\s+/)[0] || '';
 }
 
 function paraMin(hhmm: string) {
@@ -46,8 +69,7 @@ function paraMin(hhmm: string) {
   return Number(h) * 60 + Number(m);
 }
 
-/* Só oferece horário dentro do funcionamento da clínica — digitar um
-   horário fora dela era justamente o que fazia o agendamento se perder. */
+/* Só oferece horário dentro do funcionamento da clínica. */
 function SeletorHora({
   hora,
   setHora,
@@ -99,28 +121,9 @@ function SeletorHora({
   );
 }
 
-function hojeISO() {
-  const d = new Date();
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function emDias(dias: number) {
-  const d = new Date();
-  d.setDate(d.getDate() + dias);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function porExtenso(iso: string) {
-  return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', {
-    weekday: 'long',
-    day: '2-digit',
-    month: 'long',
-  });
-}
-
-function primeiroNome(nome?: string) {
-  return (nome || '').trim().split(/\s+/)[0] || '';
-}
+/* ------------------------------------------------------------------ */
+/* Próximas consultas do paciente                                      */
+/* ------------------------------------------------------------------ */
 
 export default function AgendarRetorno({
   pacienteId,
@@ -133,21 +136,19 @@ export default function AgendarRetorno({
   telefone?: string;
   onMudou?: () => void;
 }) {
-  const [atual, setAtual] = useState<Ag | null>(null);
+  const [lista, setLista] = useState<Ag[]>([]);
   const [carregando, setCarregando] = useState(true);
-  const [abrindoForm, setAbrindoForm] = useState(false);
-  const [data, setData] = useState(emDias(30));
+  const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
+
+  const [formAberto, setFormAberto] = useState(false);
+  const [remarcandoId, setRemarcandoId] = useState<string | null>(null);
+
+  const [data, setData] = useState(hojeISO());
   const [hora, setHora] = useState('');
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [salvando, setSalvando] = useState(false);
-
-  // O procedimento já diz quem atende; dá para trocar se alguém cobrir.
-  function escolherTipo(novoTipo: string) {
-    setTipo(novoTipo);
-    setProfissional(infoTipo(novoTipo).profissional);
-  }
-  const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
+  const [erro, setErro] = useState('');
 
   const carregar = useCallback(async () => {
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
@@ -158,33 +159,46 @@ export default function AgendarRetorno({
         .in('status', ['agendado', 'confirmado'])
         .gte('data', hojeISO())
         .order('data', { ascending: true })
-        .limit(1),
+        .order('hora', { ascending: true }),
       supabase.from('config_agenda').select('hora_inicio,hora_fim,passo_min').eq('id', 1).limit(1),
     ]);
-    setAtual(linhas && linhas[0] ? (linhas[0] as Ag) : null);
+    setLista((linhas as Ag[]) || []);
     if (cfg && cfg[0]) setConfig(cfg[0] as Config);
     setCarregando(false);
   }, [pacienteId]);
 
   useEffect(() => {
     setCarregando(true);
-    setAbrindoForm(false);
+    setFormAberto(false);
+    setRemarcandoId(null);
     carregar();
   }, [carregar]);
 
-  async function agendar(dataEscolhida: string) {
+  // O procedimento já diz quem atende; dá para trocar se alguém cobrir.
+  function escolherTipo(novoTipo: string) {
+    setTipo(novoTipo);
+    setProfissional(infoTipo(novoTipo).profissional);
+  }
+
+  function limpar() {
+    setData(hojeISO());
+    setHora('');
+    setTipo('retorno');
+    setProfissional('Bruna');
+    setErro('');
+  }
+
+  // ACRESCENTA uma consulta. Não cancela nada: a mesma paciente pode ter
+  // medicação semana que vem e retorno no mês seguinte ao mesmo tempo.
+  async function agendar() {
+    setErro('');
     setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
 
-    // Se já existe um marcado, este vira remarcação: o antigo é cancelado.
-    if (atual) {
-      await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', atual.id);
-    }
-
-    await supabase.from('agendamentos').insert([
+    const { error } = await supabase.from('agendamentos').insert([
       {
         paciente_id: pacienteId,
-        data: dataEscolhida,
+        data,
         hora: hora || null,
         tipo,
         profissional: profissional || null,
@@ -193,163 +207,261 @@ export default function AgendarRetorno({
     ]);
 
     setSalvando(false);
-    setAbrindoForm(false);
-    setHora('');
+    if (error) {
+      setErro(`Não foi possível agendar: ${error.message}`);
+      return;
+    }
+
+    limpar();
+    setFormAberto(false);
     await carregar();
     onMudou?.();
   }
 
-  async function cancelar() {
-    if (!atual) return;
-    await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', atual.id);
+  async function remarcar(ag: Ag) {
+    setErro('');
+    setSalvando(true);
+    const { error } = await supabase
+      .from('agendamentos')
+      .update({ data, hora: hora || null, tipo, profissional: profissional || null })
+      .eq('id', ag.id);
+
+    setSalvando(false);
+    if (error) {
+      setErro(`Não foi possível remarcar: ${error.message}`);
+      return;
+    }
+    setRemarcandoId(null);
+    limpar();
     await carregar();
     onMudou?.();
   }
 
-  const zap =
-    telefone && atual
-      ? `https://wa.me/${(telefone.replace(/\D/g, '').startsWith('55') ? '' : '55') + telefone.replace(/\D/g, '')}?text=${encodeURIComponent(
-          `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloTipo(atual.tipo)}) está marcado para ${porExtenso(atual.data)}${atual.hora ? ` às ${atual.hora.slice(0, 5)}` : ''}. Até lá!`
-        )}`
-      : null;
+  async function cancelar(ag: Ag) {
+    const { error } = await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', ag.id);
+    if (error) return setErro(`Não foi possível cancelar: ${error.message}`);
+    await carregar();
+    onMudou?.();
+  }
+
+  function abrirRemarcacao(ag: Ag) {
+    setRemarcandoId(ag.id);
+    setFormAberto(false);
+    setData(ag.data);
+    setHora(ag.hora ? ag.hora.slice(0, 5) : '');
+    setTipo(ag.tipo);
+    setProfissional(ag.profissional || infoTipo(ag.tipo).profissional);
+    setErro('');
+  }
+
+  function linkZap(ag: Ag) {
+    if (!telefone) return null;
+    const num = telefone.replace(/\D/g, '');
+    const comDDI = num.startsWith('55') ? num : `55${num}`;
+    const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${infoTipo(ag.tipo).label}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Até lá!`;
+    return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
+  }
+
+  /* ---------------- Campos compartilhados por agendar e remarcar ---------------- */
+  const camposDeAgendamento = (
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-1.5">
+        {[
+          { rotulo: 'hoje', dias: 0 },
+          { rotulo: '+7', dias: 7 },
+          { rotulo: '+15', dias: 15 },
+          { rotulo: '+30', dias: 30 },
+          { rotulo: '+60', dias: 60 },
+          { rotulo: '+90', dias: 90 },
+        ].map((a) => (
+          <button
+            key={a.rotulo}
+            type="button"
+            onClick={() => setData(emDias(a.dias))}
+            className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-100 font-semibold px-2.5 py-1 rounded-lg transition-colors"
+          >
+            {a.rotulo}
+          </button>
+        ))}
+      </div>
+
+      <input
+        type="date"
+        value={data}
+        onChange={(e) => setData(e.target.value)}
+        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+      />
+      <p className="text-xs text-amber-800/70 capitalize">
+        {porExtenso(data)}
+        {data === hojeISO() && <span className="normal-case font-semibold"> · hoje</span>}
+      </p>
+
+      <SeletorHora hora={hora} setHora={setHora} config={config} />
+
+      <select
+        value={tipo}
+        onChange={(e) => escolherTipo(e.target.value)}
+        className="w-full px-3 py-2 border rounded-lg text-sm bg-white outline-none font-semibold"
+        style={{ borderColor: infoTipo(tipo).cor, color: infoTipo(tipo).cor }}
+      >
+        {TIPOS.map((t) => (
+          <option key={t.id} value={t.id}>
+            {t.label}
+          </option>
+        ))}
+      </select>
+
+      <select
+        value={profissional}
+        onChange={(e) => setProfissional(e.target.value)}
+        className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+      >
+        <option value="">Quem atende</option>
+        {PROFISSIONAIS.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+
+      {erro && (
+        <div className="bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-lg">
+          <p className="text-xs text-red-800 font-semibold">{erro}</p>
+        </div>
+      )}
+    </div>
+  );
 
   if (carregando) {
     return (
       <div className="bg-white border border-amber-200/70 rounded-xl px-5 py-4">
-        <p className="text-xs text-amber-800/60">Carregando agendamento…</p>
+        <p className="text-xs text-amber-800/60">Carregando agendamentos…</p>
       </div>
     );
   }
 
   return (
     <div className="bg-white border border-amber-200/70 rounded-xl overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-amber-100">
-        <h3 className="font-serif font-bold text-amber-950 text-sm">📅 Próxima consulta</h3>
+      <div className="px-5 py-3.5 border-b border-amber-100 flex items-center justify-between gap-2">
+        <h3 className="font-serif font-bold text-amber-950 text-sm">
+          📅 Próximas consultas{' '}
+          {lista.length > 0 && <span className="text-amber-700/70 font-sans text-xs">({lista.length})</span>}
+        </h3>
       </div>
 
-      {atual && !abrindoForm ? (
-        <div className="px-5 py-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <p className="text-lg font-serif font-bold text-amber-950 capitalize">{porExtenso(atual.data)}</p>
-            <p className="text-xs mt-0.5">
-              <span className="font-semibold" style={{ color: infoTipo(atual.tipo).cor }}>
-                {rotuloTipo(atual.tipo)}
-              </span>
-              <span className="text-amber-800/70">
-                {atual.profissional ? ` · ${atual.profissional}` : ''}
-                {atual.hora ? ` · ${atual.hora.slice(0, 5)}` : ''}
-                {atual.status === 'confirmado' ? ' · confirmado' : ''}
-              </span>
-            </p>
-          </div>
-          <div className="flex items-center gap-1.5 flex-wrap">
-            {zap && (
-              <a
-                href={zap}
-                target="_blank"
-                rel="noreferrer"
-                className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-              >
-                💬 Avisar
-              </a>
-            )}
-            <button
-              onClick={() => {
-                setData(atual.data);
-                escolherTipo(atual.tipo);
-                if (atual.profissional) setProfissional(atual.profissional);
-                setAbrindoForm(true);
-              }}
-              className="text-[11px] bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              Remarcar
-            </button>
-            <button
-              onClick={cancelar}
-              className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-50 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              Cancelar
-            </button>
-          </div>
-        </div>
+      {lista.length === 0 ? (
+        <p className="px-5 py-4 text-xs text-amber-800/70">Nenhuma consulta marcada para esta paciente.</p>
       ) : (
-        <div className="px-5 py-4 space-y-3">
-          {!atual && (
-            <p className="text-xs text-amber-800/70">
-              Sem retorno marcado. Escolha um prazo ou defina a data.
-            </p>
-          )}
+        <div className="divide-y divide-amber-100">
+          {lista.map((ag) => {
+            const info = infoTipo(ag.tipo);
+            const zap = linkZap(ag);
 
-          {/* Atalhos de prazo — o caso comum em um clique */}
-          <div className="flex flex-wrap gap-2">
-            {[15, 30, 45, 60, 90].map((d) => (
-              <button
-                key={d}
-                type="button"
-                disabled={salvando}
-                onClick={() => agendar(emDias(d))}
-                className="text-xs bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white font-semibold px-3 py-2 rounded-lg transition-colors shadow-sm"
-              >
-                {d} dias
-              </button>
-            ))}
-          </div>
+            return (
+              <div key={ag.id} className="border-l-4" style={{ borderLeftColor: info.cor }}>
+                <div className="px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-sm font-serif font-bold text-amber-950 capitalize">
+                      {porExtenso(ag.data)}
+                      {ag.hora ? (
+                        <span className="font-sans tabular-nums text-amber-800"> · {ag.hora.slice(0, 5)}</span>
+                      ) : (
+                        <span className="font-sans text-amber-800/60"> · sem hora</span>
+                      )}
+                    </p>
+                    <p className="text-xs mt-0.5">
+                      <span className="font-semibold" style={{ color: info.cor }}>
+                        {info.label}
+                      </span>
+                      {ag.profissional && <span className="text-amber-800/70"> · {ag.profissional}</span>}
+                      {ag.status === 'confirmado' && (
+                        <span className="text-emerald-700 font-semibold"> · confirmado</span>
+                      )}
+                    </p>
+                  </div>
 
-          <div className="flex flex-col sm:flex-row gap-2 pt-1">
-            <input
-              type="date"
-              value={data}
-              onChange={(e) => setData(e.target.value)}
-              className="flex-1 px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
-            />
-            <div className="flex-1">
-              <SeletorHora hora={hora} setHora={setHora} config={config} />
-            </div>
-            <select
-              value={tipo}
-              onChange={(e) => escolherTipo(e.target.value)}
-              className="px-3 py-2 border rounded-lg text-sm bg-white outline-none font-semibold"
-              style={{ borderColor: infoTipo(tipo).cor, color: infoTipo(tipo).cor }}
-            >
-              {TIPOS.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.label}
-                </option>
-              ))}
-            </select>
-            <select
-              value={profissional}
-              onChange={(e) => setProfissional(e.target.value)}
-              className="px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
-            >
-              <option value="">Quem atende</option>
-              {PROFISSIONAIS.map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-            <button
-              type="button"
-              disabled={salvando}
-              onClick={() => agendar(data)}
-              className="bg-amber-900 hover:bg-amber-950 disabled:opacity-50 text-white font-semibold px-5 py-2 rounded-lg text-sm transition-colors shadow-sm whitespace-nowrap"
-            >
-              {salvando ? 'Salvando…' : atual ? 'Remarcar' : 'Agendar'}
-            </button>
-          </div>
+                  <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0">
+                    {zap && (
+                      <a
+                        href={zap}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                      >
+                        💬 Avisar
+                      </a>
+                    )}
+                    <button
+                      onClick={() => (remarcandoId === ag.id ? setRemarcandoId(null) : abrirRemarcacao(ag))}
+                      className="text-[11px] bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      Remarcar
+                    </button>
+                    <button
+                      onClick={() => cancelar(ag)}
+                      className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-50 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      Cancelar
+                    </button>
+                  </div>
+                </div>
 
-          {atual && (
-            <button
-              type="button"
-              onClick={() => setAbrindoForm(false)}
-              className="text-xs text-amber-700 hover:underline"
-            >
-              voltar
-            </button>
-          )}
+                {remarcandoId === ag.id && (
+                  <div className="px-4 pb-4 pt-1 bg-amber-50/60">
+                    {camposDeAgendamento}
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        onClick={() => {
+                          setRemarcandoId(null);
+                          limpar();
+                        }}
+                        className="flex-1 text-sm font-semibold px-4 py-2 rounded-lg border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
+                      >
+                        Voltar
+                      </button>
+                      <button
+                        onClick={() => remarcar(ag)}
+                        disabled={salvando}
+                        className="flex-1 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                      >
+                        {salvando ? 'Salvando…' : 'Salvar mudança'}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
+
+      {/* Sempre disponível: acrescenta mais uma consulta, sem mexer nas outras */}
+      <div className="border-t border-amber-100">
+        <button
+          onClick={() => {
+            setFormAberto(!formAberto);
+            setRemarcandoId(null);
+            if (!formAberto) limpar();
+          }}
+          className="w-full px-5 py-3 flex items-center justify-between hover:bg-amber-50/60 transition-colors"
+        >
+          <span className="text-sm font-semibold text-amber-900">➕ Agendar consulta</span>
+          <span className="text-amber-700 text-xs">{formAberto ? 'Fechar' : 'Abrir'}</span>
+        </button>
+
+        {formAberto && (
+          <div className="px-5 pb-5">
+            {camposDeAgendamento}
+            <button
+              onClick={agendar}
+              disabled={salvando}
+              className="w-full mt-2 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white font-semibold py-2.5 rounded-xl text-sm transition-colors shadow"
+            >
+              {salvando ? 'Salvando…' : 'Agendar'}
+            </button>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
