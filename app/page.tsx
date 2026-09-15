@@ -938,7 +938,7 @@ function Dashboard() {
                     <textarea rows={3} value={observacoes} onChange={(e) => setObservacoes(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" placeholder="Objetivos esportivos, lesões prévias, suplementação em uso..."></textarea>
                   </div>
 
-                  {/* Preferências de atendimento — aparecem na agenda antes da paciente chegar */}
+                  {/* Preferências de atendimento — aparecem na agenda antes do paciente chegar */}
                   <div className="pt-2 mt-1 border-t border-amber-100">
                     <p className="text-[11px] font-bold uppercase tracking-wider text-amber-800/60 mb-2">
                       ✨ Preferências de atendimento
@@ -1569,10 +1569,10 @@ function ModalGerenciarPaciente({
             <div className="p-3 border border-red-300 bg-red-50 rounded-xl space-y-2">
               <p className="text-xs text-red-800 font-semibold leading-relaxed">
                 Excluir de vez apaga também o histórico de medicamentos aplicados, as pesagens e os
-                agendamentos desta pessoa. Não tem como desfazer.
+                agendamentos deste paciente. Não tem como desfazer.
               </p>
               <p className="text-xs text-red-800">
-                Use só para cadastro duplicado ou criado por engano. Se ela foi paciente de verdade,
+                Use só para cadastro duplicado ou criado por engano. Se foi paciente de verdade,
                 arquive.
               </p>
               <div className="flex gap-2">
