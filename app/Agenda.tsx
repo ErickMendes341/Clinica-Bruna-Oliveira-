@@ -350,12 +350,17 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
           <FormNovoAgendamento
             pacientes={painel}
             config={config}
-            dataInicial={preset.data}
+            dataInicial={preset.data || dia}
             horaInicial={preset.hora}
-            onPronto={() => {
+            onPronto={(dataSalva: string) => {
               setNovoAberto(false);
               setPreset({});
-              recarregarTudo();
+              // Leva a grade para o dia em que o agendamento caiu, para
+              // ninguém ficar procurando ele num dia que não é o dele.
+              setDia(dataSalva);
+              setDiaAberto(true);
+              carregar();
+              carregarDia(dataSalva);
             }}
           />
         )}
@@ -1230,11 +1235,13 @@ function FormNovoAgendamento({
   config: Config;
   dataInicial?: string;
   horaInicial?: string;
-  onPronto: () => void;
+  onPronto: (dataSalva: string) => void;
 }) {
   const [pacienteId, setPacienteId] = useState('');
   const [busca, setBusca] = useState('');
-  const [data, setData] = useState(dataInicial || somaDias(hojeISO(), 30));
+  // Antes isto vinha com hoje + 30 dias, e agendamento ia parar no mês
+  // seguinte sem ninguém reparar. Agora nasce no dia que está na tela.
+  const [data, setData] = useState(dataInicial || hojeISO());
   const [hora, setHora] = useState(horaInicial || '');
   const [tipo, setTipo] = useState('retorno');
   const [obs, setObs] = useState('');
@@ -1327,7 +1334,7 @@ function FormNovoAgendamento({
     }
 
     limparTudo();
-    onPronto();
+    onPronto(data);
   }
 
   return (
@@ -1461,6 +1468,32 @@ function FormNovoAgendamento({
             required
             className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
           />
+        </div>
+        <div className="col-span-2 sm:col-span-3 -mt-1">
+          {/* A data por extenso: 15/10 e 15/09 são fáceis de confundir num
+              campo pequeno, e o agendamento acaba no mês errado. */}
+          <p className="text-xs text-amber-800/70 capitalize">
+            {porExtenso(data)}
+            {data === hojeISO() && <span className="normal-case font-semibold"> · hoje</span>}
+          </p>
+          <div className="flex flex-wrap gap-1.5 mt-1.5">
+            {[
+              { rotulo: 'hoje', dias: 0 },
+              { rotulo: '+15 dias', dias: 15 },
+              { rotulo: '+30 dias', dias: 30 },
+              { rotulo: '+60 dias', dias: 60 },
+              { rotulo: '+90 dias', dias: 90 },
+            ].map((atalho) => (
+              <button
+                key={atalho.rotulo}
+                type="button"
+                onClick={() => setData(somaDias(hojeISO(), atalho.dias))}
+                className="text-[11px] border border-amber-200 text-amber-800 hover:bg-amber-100 font-semibold px-2.5 py-1 rounded-lg transition-colors"
+              >
+                {atalho.rotulo}
+              </button>
+            ))}
+          </div>
         </div>
         <div>
           <label className="block text-xs font-semibold text-amber-900 mb-1">Horário</label>
