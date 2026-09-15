@@ -1008,6 +1008,12 @@ function Dashboard() {
                 <div className="flex items-center justify-between mb-3 gap-2">
                   <h2 className="text-lg font-serif font-bold text-amber-950">
                     {mostrarArquivados ? 'Pacientes Arquivados' : 'Buscar Paciente'}
+                    {/* Contagem de verdade: os outros números da Agenda são
+                        filas de trabalho e mudam sozinhos conforme você agenda. */}
+                    <span className="text-amber-700/70 font-sans text-sm font-semibold">
+                      {' '}
+                      ({pacientes.filter((p) => !p.arquivado_em).length})
+                    </span>
                   </h2>
                   {(arquivados.length > 0 || mostrarArquivados) && (
                     <button
