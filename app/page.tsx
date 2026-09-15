@@ -17,6 +17,9 @@ interface Product {
   quantidade_minima: number;
   preco_custo: number;
   validade?: string;
+  // Produto arquivado sai do estoque e dos seletores, mas as fichas dos
+  // pacientes que o receberam continuam intactas.
+  arquivado_em?: string | null;
 }
 
 interface Movimentacao {
@@ -92,6 +95,7 @@ function Dashboard() {
   const [historico, setHistorico] = useState<Movimentacao[]>([]);
   const [activeTab, setActiveTab] = useState('todos');
   const [searchTerm, setSearchTerm] = useState('');
+  const [mostrarProdutosArquivados, setMostrarProdutosArquivados] = useState(false);
 
   // Cadastro e Edição de Produto
   const [editingProductId, setEditingProductId] = useState<string | null>(null);
@@ -253,12 +257,20 @@ function Dashboard() {
         fetchData();
       }
     } else {
-      const { data, error } = await supabase.from('produtos').insert([payload]).select();
+      // Cadastra com 0 e registra a quantidade inicial como ENTRADA, para o
+      // histórico contar a história completa do produto desde o primeiro dia.
+      const { data, error } = await supabase
+        .from('produtos')
+        .insert([{ ...payload, quantidade: 0 }])
+        .select('id')
+        .single();
       if (error) {
         alert(`Erro ao cadastrar produto: ${error.message}`);
       } else {
-        if (data && data[0]) {
-          await registrarMovimentacao(data[0].id, nome, 'ENTRADA', parseInt(quantidade));
+        const inicial = parseInt(quantidade);
+        if (data && inicial > 0) {
+          const erro = await movimentarEstoque(data.id, inicial, `${nome} (Cadastro)`);
+          if (erro) alert(`Produto cadastrado, mas a quantidade inicial não entrou: ${erro}`);
         }
         limpaFormularioProduto();
         fetchData();
@@ -266,8 +278,19 @@ function Dashboard() {
     }
   }
 
-  async function registrarMovimentacao(produto_id: string, nome_produto: string, tipo: 'ENTRADA' | 'SAIDA', cantidad: number) {
-    await supabase.from('historico_movimentacoes').insert([{ produto_id, nome_produto, tipo, quantidade: cantidad }]);
+  /* ---------- Movimentação de estoque ----------
+     Toda mexida na quantidade passa pela função movimentar_estoque() do
+     banco: ela soma/subtrai numa instrução só (duas pessoas ao mesmo tempo
+     não se atropelam), nunca deixa ficar negativo e registra no histórico
+     na mesma transação. Aqui só mandamos o quanto e para quê.          */
+
+  async function movimentarEstoque(produtoId: string, delta: number, descricao?: string) {
+    const { error } = await supabase.rpc('movimentar_estoque', {
+      p_produto_id: produtoId,
+      p_delta: delta,
+      p_descricao: descricao ?? null,
+    });
+    return error ? error.message : null;
   }
 
   async function handleEntrada(product: Product) {
@@ -276,8 +299,8 @@ function Dashboard() {
     const qtd = parseInt(qtdStr);
     if (isNaN(qtd) || qtd <= 0) return alert('Número inválido!');
 
-    await supabase.from('produtos').update({ quantidade: product.quantidade + qtd }).eq('id', product.id);
-    await registrarMovimentacao(product.id, product.nome, 'ENTRADA', qtd);
+    const erro = await movimentarEstoque(product.id, qtd);
+    if (erro) alert(`Erro ao registrar entrada: ${erro}`);
     fetchData();
   }
 
@@ -285,30 +308,35 @@ function Dashboard() {
     const qtdStr = prompt(`Quantidade de '${product.nome}' para RETIRAR:`);
     if (!qtdStr) return;
     const qtd = parseInt(qtdStr);
-    if (isNaN(qtd) || qtd <= 0 || qtd > product.quantidade) return alert('Quantidade inválida!');
+    if (isNaN(qtd) || qtd <= 0) return alert('Quantidade inválida!');
 
-    await supabase.from('produtos').update({ quantidade: product.quantidade - qtd }).eq('id', product.id);
-    await registrarMovimentacao(product.id, product.nome, 'SAIDA', qtd);
+    const erro = await movimentarEstoque(product.id, -qtd);
+    if (erro) alert(`Erro ao dar baixa: ${erro}`);
     fetchData();
   }
 
-  async function handleDeleteProduct(id: string, nome: string) {
-    if (!confirm(`Tem certeza que deseja excluir "${nome}"?`)) return;
+  /* ---------- Arquivar produto ----------
+     Produto não é excluído: as fichas dos pacientes que o receberam
+     precisam continuar mostrando o que foi aplicado. Arquivar tira ele
+     do estoque e dos seletores; dá para restaurar depois.             */
 
-    try {
-      await supabase.from('historico_movimentacoes').delete().eq('produto_id', id);
-      await supabase.from('consumos_paciente').delete().eq('produto_id', id);
-      const { error } = await supabase.from('produtos').delete().eq('id', id);
+  async function handleArquivarProduto(p: Product) {
+    if (!confirm(`Arquivar "${p.nome}"? Ele some do estoque, mas o histórico dos pacientes fica guardado.`)) return;
 
-      if (error) {
-        alert(`Erro ao excluir produto: ${error.message}`);
-      } else {
-        setProducts(prev => prev.filter(item => item.id !== id));
-        fetchData();
-      }
-    } catch (err) {
-      console.error('Erro ao excluir produto:', err);
-    }
+    const { error } = await supabase
+      .from('produtos')
+      .update({ arquivado_em: new Date().toISOString() })
+      .eq('id', p.id);
+
+    if (error) return alert(`Erro ao arquivar produto: ${error.message}`);
+    if (editingProductId === p.id) limpaFormularioProduto();
+    fetchData();
+  }
+
+  async function handleRestaurarProduto(p: Product) {
+    const { error } = await supabase.from('produtos').update({ arquivado_em: null }).eq('id', p.id);
+    if (error) return alert(`Erro ao restaurar produto: ${error.message}`);
+    fetchData();
   }
 
   // --- PACIENTES HANDLERS ---
@@ -518,9 +546,17 @@ function Dashboard() {
     irPara({ tab: 'pacientes', pacienteId: id });
   }
 
+  // Datas do banco vêm como "AAAA-MM-DD". Lidas com new Date() direto o
+  // JavaScript entende como meia-noite em Londres, que no Brasil ainda é o
+  // dia anterior — e o aniversário cai no dia errado. O "T12:00:00" força
+  // meio-dia local, longe de qualquer virada de fuso.
+  function dataLocal(iso: string) {
+    return new Date(iso.slice(0, 10) + 'T12:00:00');
+  }
+
   function calcularIdade(dataNascimentoStr?: string) {
     if (!dataNascimentoStr) return 'Não informada';
-    const nascimento = new Date(dataNascimentoStr);
+    const nascimento = dataLocal(dataNascimentoStr);
     const hoje = new Date();
     let idade = hoje.getFullYear() - nascimento.getFullYear();
     const m = hoje.getMonth() - nascimento.getMonth();
@@ -530,24 +566,21 @@ function Dashboard() {
 
   function ehAniversarianteHoje(dataNascimentoStr?: string) {
     if (!dataNascimentoStr) return false;
-    const nascimento = new Date(dataNascimentoStr);
+    const nascimento = dataLocal(dataNascimentoStr);
     const hoje = new Date();
-    return (
-      nascimento.getUTCDate() === hoje.getDate() &&
-      nascimento.getUTCMonth() === hoje.getMonth()
-    );
+    return nascimento.getDate() === hoje.getDate() && nascimento.getMonth() === hoje.getMonth();
   }
 
   function ehRetornoAmanha(dataRetornoStr?: string) {
     if (!dataRetornoStr) return false;
-    const retorno = new Date(dataRetornoStr);
+    const retorno = dataLocal(dataRetornoStr);
     const amanha = new Date();
     amanha.setDate(amanha.getDate() + 1);
 
     return (
-      retorno.getUTCDate() === amanha.getDate() &&
-      retorno.getUTCMonth() === amanha.getMonth() &&
-      retorno.getUTCFullYear() === amanha.getFullYear()
+      retorno.getDate() === amanha.getDate() &&
+      retorno.getMonth() === amanha.getMonth() &&
+      retorno.getFullYear() === amanha.getFullYear()
     );
   }
 
@@ -558,43 +591,23 @@ function Dashboard() {
     return `https://wa.me/${numComDDI}?text=${encodeURIComponent(mensagemCustomizada || '')}`;
   }
 
-  /* ---------- Correção de item aplicado ----------
-     Apagar e editar mexem no estoque de verdade. Para não trabalhar com
-     número velho na tela, a quantidade atual do produto é lida do banco
-     na hora, e toda devolução deixa registro no histórico.            */
-
-  async function estoqueAtual(produtoId: string) {
-    const { data } = await supabase.from('produtos').select('id,nome,quantidade').eq('id', produtoId).single();
-    return (data as { id: string; nome: string; quantidade: number } | null) ?? null;
-  }
+  /* ---------- Itens aplicados na ficha ----------
+     Aplicar, corrigir e apagar mexem no estoque de verdade. Cada uma é
+     uma função no banco (aplicar_item, corrigir_consumo, estornar_consumo)
+     que faz baixa + histórico + ficha numa transação só: se a internet
+     cair no meio, nada fica pela metade.                                */
 
   async function handleDeleteConsumo(c: ConsumoPaciente) {
     if (!selectedPaciente) return;
     if (!confirm(`Apagar "${c.nome_produto}" (${c.quantidade} un.) da ficha e devolver ao estoque?`)) return;
 
-    if (c.produto_id) {
-      const prod = await estoqueAtual(c.produto_id);
-      if (prod) {
-        await supabase
-          .from('produtos')
-          .update({ quantidade: prod.quantidade + c.quantidade })
-          .eq('id', prod.id);
-        await registrarMovimentacao(
-          prod.id,
-          `${prod.nome} (Estorno: ${selectedPaciente.nome})`,
-          'ENTRADA',
-          c.quantidade
-        );
-      }
-    }
-
-    const { error } = await supabase.from('consumos_paciente').delete().eq('id', c.id);
+    const { data: devolveu, error } = await supabase.rpc('estornar_consumo', { p_consumo_id: c.id });
     if (error) {
       alert(`Erro ao apagar: ${error.message}`);
       return;
     }
 
-    if (!c.produto_id) {
+    if (!devolveu) {
       alert('Item apagado da ficha. O produto não está mais no estoque, então não houve devolução.');
     }
 
@@ -606,65 +619,11 @@ function Dashboard() {
     if (!selectedPaciente) return { ok: false, msg: 'Paciente não selecionado.' };
     if (isNaN(novaQtd) || novaQtd <= 0) return { ok: false, msg: 'Quantidade inválida.' };
 
-    const mesmoProduto = c.produto_id === novoProdutoId;
-
-    if (mesmoProduto && c.produto_id) {
-      const prod = await estoqueAtual(c.produto_id);
-      if (!prod) return { ok: false, msg: 'Produto não encontrado no estoque.' };
-
-      const diferenca = novaQtd - c.quantidade; // >0 tira mais, <0 devolve
-      if (diferenca > prod.quantidade) {
-        return { ok: false, msg: `Estoque insuficiente. Disponível: ${prod.quantidade} un.` };
-      }
-
-      await supabase.from('produtos').update({ quantidade: prod.quantidade - diferenca }).eq('id', prod.id);
-      if (diferenca !== 0) {
-        await registrarMovimentacao(
-          prod.id,
-          `${prod.nome} (Correção: ${selectedPaciente.nome})`,
-          diferenca > 0 ? 'SAIDA' : 'ENTRADA',
-          Math.abs(diferenca)
-        );
-      }
-    } else {
-      // Trocou de produto: devolve tudo ao antigo e tira do novo.
-      const novo = await estoqueAtual(novoProdutoId);
-      if (!novo) return { ok: false, msg: 'Produto não encontrado no estoque.' };
-      if (novaQtd > novo.quantidade) {
-        return { ok: false, msg: `Estoque insuficiente de ${novo.nome}. Disponível: ${novo.quantidade} un.` };
-      }
-
-      if (c.produto_id) {
-        const antigo = await estoqueAtual(c.produto_id);
-        if (antigo) {
-          await supabase
-            .from('produtos')
-            .update({ quantidade: antigo.quantidade + c.quantidade })
-            .eq('id', antigo.id);
-          await registrarMovimentacao(
-            antigo.id,
-            `${antigo.nome} (Estorno: ${selectedPaciente.nome})`,
-            'ENTRADA',
-            c.quantidade
-          );
-        }
-      }
-
-      await supabase.from('produtos').update({ quantidade: novo.quantidade - novaQtd }).eq('id', novo.id);
-      await registrarMovimentacao(
-        novo.id,
-        `${novo.nome} (Correção: ${selectedPaciente.nome})`,
-        'SAIDA',
-        novaQtd
-      );
-    }
-
-    const nomeNovo = products.find((p) => p.id === novoProdutoId)?.nome ?? c.nome_produto;
-    const { error } = await supabase
-      .from('consumos_paciente')
-      .update({ produto_id: novoProdutoId, nome_produto: nomeNovo, quantidade: novaQtd })
-      .eq('id', c.id);
-
+    const { error } = await supabase.rpc('corrigir_consumo', {
+      p_consumo_id: c.id,
+      p_produto_id: novoProdutoId,
+      p_qtd: novaQtd,
+    });
     if (error) return { ok: false, msg: error.message };
 
     fetchData();
@@ -679,19 +638,16 @@ function Dashboard() {
     const qtd = parseInt(qtdConsumo);
     if (isNaN(qtd) || qtd <= 0) return alert('Quantidade inválida!');
 
-    const produto = products.find(p => p.id === selectedProdutoId);
-    if (!produto) return;
-
-    if (qtd > produto.quantidade) {
-      return alert(`Estoque insuficiente! Disponível: ${produto.quantidade} un.`);
+    const { error } = await supabase.rpc('aplicar_item', {
+      p_paciente_id: selectedPaciente.id,
+      p_produto_id: selectedProdutoId,
+      p_qtd: qtd,
+    });
+    if (error) {
+      alert(`Não foi possível aplicar: ${error.message}`);
+      fetchData(); // a quantidade na tela pode estar velha
+      return;
     }
-
-    const novaQtd = produto.quantidade - qtd;
-    await supabase.from('produtos').update({ quantidade: novaQtd }).eq('id', produto.id);
-    await registrarMovimentacao(produto.id, `${produto.nome} (Paciente: ${selectedPaciente.nome})`, 'SAIDA', qtd);
-    await supabase.from('consumos_paciente').insert([
-      { paciente_id: selectedPaciente.id, produto_id: produto.id, nome_produto: produto.nome, quantidade: qtd }
-    ]);
 
     setQtdConsumo('1');
     setSelectedProdutoId('');
@@ -699,8 +655,12 @@ function Dashboard() {
     fetchConsumos(selectedPaciente.id);
   }
 
+  // Só produtos ativos entram no estoque, nos alertas e nos seletores.
+  const produtosAtivos = products.filter((p) => !p.arquivado_em);
+  const produtosArquivados = products.filter((p) => p.arquivado_em);
+
   // Ordena produtos: itens < 10 aparecem PRIMEIRO na lista
-  const filteredProducts = products
+  const filteredProducts = (mostrarProdutosArquivados ? produtosArquivados : produtosAtivos)
     .filter((product) => {
       const matchesTab = activeTab === 'todos' || (product.categoria || 'insumos') === activeTab;
       const matchesSearch = product.nome.toLowerCase().includes(searchTerm.toLowerCase()) || (product.lote && product.lote.toLowerCase().includes(searchTerm.toLowerCase()));
@@ -712,7 +672,7 @@ function Dashboard() {
       return aBaixo - bBaixo;
     });
 
-  const produtosEstoqueBaixo = products.filter(p => p.quantidade < 10);
+  const produtosEstoqueBaixo = produtosAtivos.filter(p => p.quantidade < 10);
   const aniversariantesHoje = pacientes.filter(p => ehAniversarianteHoje(p.data_nascimento));
   const retornosAmanha = pacientes.filter(p => ehRetornoAmanha(p.data_retorno));
 
@@ -1239,7 +1199,7 @@ function Dashboard() {
                           required
                         >
                           <option value="">Selecione o medicamento/suplemento...</option>
-                          {products.map((p) => (
+                          {produtosAtivos.map((p) => (
                             <option key={p.id} value={p.id} disabled={p.quantidade <= 0}>
                               {p.nome} (Disponível: {p.quantidade} un. {p.quantidade < 10 ? '⚠️' : ''})
                             </option>
@@ -1362,7 +1322,7 @@ function Dashboard() {
         {editandoConsumo && (
           <ModalEditarConsumo
             consumo={editandoConsumo}
-            produtos={products}
+            produtos={produtosAtivos}
             onFechar={() => setEditandoConsumo(null)}
             onSalvar={handleSalvarEdicaoConsumo}
           />
@@ -1443,7 +1403,18 @@ function Dashboard() {
                     </button>
                   ))}
                 </div>
-                <input type="text" placeholder="🔍 Pesquisar por nome ou lote..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
+                <div className="flex items-center gap-2 w-full md:w-auto">
+                  <input type="text" placeholder="🔍 Pesquisar por nome ou lote..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="w-full md:w-72 px-3 py-2 border border-amber-200 rounded-lg text-xs outline-none" />
+                  {(produtosArquivados.length > 0 || mostrarProdutosArquivados) && (
+                    <button
+                      type="button"
+                      onClick={() => setMostrarProdutosArquivados(!mostrarProdutosArquivados)}
+                      className={`flex-shrink-0 text-xs font-semibold px-3 py-2 rounded-lg border transition-all ${mostrarProdutosArquivados ? 'bg-amber-800 text-white border-amber-800' : 'border-amber-200 text-amber-800 hover:bg-amber-50'}`}
+                    >
+                      {mostrarProdutosArquivados ? '← Voltar ao estoque' : `🗂️ Arquivados (${produtosArquivados.length})`}
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="overflow-x-auto">
@@ -1482,10 +1453,16 @@ function Dashboard() {
                           <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
                           <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
                           <td className="py-3 px-3 text-center space-x-1">
-                            <button onClick={() => handleEntrada(p)} title="Adicionar Entrada" className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">+</button>
-                            <button onClick={() => handleBaixa(p)} title="Dar Baixa" className="bg-amber-700 hover:bg-amber-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">-</button>
-                            <button onClick={() => handlePrepareEditProduct(p)} title="Editar Produto" className="bg-amber-100 text-amber-900 hover:bg-amber-200 px-2 py-1 rounded-md text-xs">✏️</button>
-                            <button onClick={() => handleDeleteProduct(p.id, p.nome)} title="Excluir Produto" className="bg-red-700 hover:bg-red-800 text-white px-2 py-1 rounded-md text-xs">🗑️</button>
+                            {p.arquivado_em ? (
+                              <button onClick={() => handleRestaurarProduto(p)} title="Restaurar ao estoque" className="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 rounded-md text-xs font-semibold">↩ Restaurar</button>
+                            ) : (
+                              <>
+                                <button onClick={() => handleEntrada(p)} title="Adicionar Entrada" className="bg-emerald-700 hover:bg-emerald-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">+</button>
+                                <button onClick={() => handleBaixa(p)} title="Dar Baixa" className="bg-amber-700 hover:bg-amber-800 text-white px-2.5 py-1 rounded-md text-xs font-bold">-</button>
+                                <button onClick={() => handlePrepareEditProduct(p)} title="Editar Produto" className="bg-amber-100 text-amber-900 hover:bg-amber-200 px-2 py-1 rounded-md text-xs">✏️</button>
+                                <button onClick={() => handleArquivarProduto(p)} title="Arquivar Produto" className="bg-stone-600 hover:bg-stone-700 text-white px-2 py-1 rounded-md text-xs">🗂️</button>
+                              </>
+                            )}
                           </td>
                         </tr>
                       );
