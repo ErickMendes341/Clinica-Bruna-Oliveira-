@@ -100,7 +100,16 @@ const PARTE_VAZIA: ParteForm = { forma: 'pix', valor: '' };
 /* Pagamentos de um paciente, dentro da ficha                          */
 /* ------------------------------------------------------------------ */
 
-export default function Pagamentos({ pacienteId }: { pacienteId: string }) {
+export default function Pagamentos({
+  pacienteId,
+  aberto,
+  onAlternar,
+}: {
+  pacienteId: string;
+  // A seção abre e fecha pelo cabeçalho; fechada mostra só o total.
+  aberto: boolean;
+  onAlternar: () => void;
+}) {
   const [lista, setLista] = useState<Pagamento[]>([]);
   const [carregando, setCarregando] = useState(true);
 
@@ -222,15 +231,28 @@ export default function Pagamentos({ pacienteId }: { pacienteId: string }) {
 
   return (
     <div className="bg-white rounded-xl border border-amber-200/60 overflow-hidden">
-      <div className="px-5 py-3 border-b border-amber-100 flex items-center justify-between gap-3">
-        <h3 className="font-serif font-bold text-amber-950 text-sm">💳 Pagamentos</h3>
-        {lista.length > 0 && (
-          <span className="text-xs text-amber-900">
-            Total pago: <strong className="text-emerald-800">{reais(total)}</strong>
-          </span>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={onAlternar}
+        className={`w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left ${aberto ? 'border-b border-amber-100' : ''}`}
+      >
+        <div className="min-w-0">
+          <h3 className="font-serif font-bold text-amber-950 text-base">
+            💳 Pagamentos{' '}
+            {lista.length > 0 && <span className="text-amber-700/70 font-sans text-sm">({lista.length})</span>}
+          </h3>
+          {lista.length > 0 && (
+            <p className="text-xs text-amber-800/70 mt-0.5 truncate">
+              total pago: <strong className="text-emerald-800">{reais(total)}</strong>
+              {!aberto && ` · último em ${dataBR(lista[0].data)}`}
+            </p>
+          )}
+        </div>
+        <span className="text-amber-700 text-sm flex-shrink-0">{aberto ? 'Fechar' : 'Abrir'}</span>
+      </button>
 
+      {aberto && (
+        <>
       {/* ---------- Registro / alteração ---------- */}
       <form
         onSubmit={salvar}
@@ -365,6 +387,8 @@ export default function Pagamentos({ pacienteId }: { pacienteId: string }) {
             </tbody>
           </table>
         </div>
+      )}
+        </>
       )}
     </div>
   );

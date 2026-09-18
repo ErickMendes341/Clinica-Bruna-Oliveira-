@@ -133,6 +133,10 @@ function Dashboard() {
   const [selectedProdutoId, setSelectedProdutoId] = useState('');
   const [qtdConsumo, setQtdConsumo] = useState('1');
   const [consumosAberto, setConsumosAberto] = useState(false);
+  // Seções da ficha que abrem e fecham; começam fechadas para a ficha ficar enxuta.
+  const [pesagemAberta, setPesagemAberta] = useState(false);
+  const [pagamentosAberto, setPagamentosAberto] = useState(false);
+  const [prescreverAberto, setPrescreverAberto] = useState(false);
   const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
   const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
@@ -489,6 +493,11 @@ function Dashboard() {
         setSelectedPaciente(p);
         fetchConsumos(p.id);
         fetchProximoAgendamento(p.id);
+        // Cada ficha abre enxuta; a pessoa expande só o que precisa.
+        setPesagemAberta(false);
+        setPagamentosAberto(false);
+        setPrescreverAberto(false);
+        setConsumosAberto(false);
       } else {
         setSelectedPaciente(null);
       }
@@ -1195,17 +1204,31 @@ function Dashboard() {
                       altura={selectedPaciente.altura}
                       metaPeso={selectedPaciente.meta_peso}
                       onMudou={fetchPacientes}
+                      aberto={pesagemAberta}
+                      onAlternar={() => setPesagemAberta(!pesagemAberta)}
                     />
                   </div>
 
                   {/* O que o paciente já pagou; a aba Financeiro soma tudo */}
                   <div className="print:hidden">
-                    <Pagamentos pacienteId={selectedPaciente.id} />
+                    <Pagamentos
+                      pacienteId={selectedPaciente.id}
+                      aberto={pagamentosAberto}
+                      onAlternar={() => setPagamentosAberto(!pagamentosAberto)}
+                    />
                   </div>
 
-                  <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">
-                    <h3 className="font-serif font-semibold text-amber-950 text-sm mb-3">💉 Prescrever / Aplicar Item do Estoque</h3>
-                    <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3">
+                  <div className="bg-white border border-amber-200/60 rounded-xl overflow-hidden print:hidden">
+                    <button
+                      type="button"
+                      onClick={() => setPrescreverAberto(!prescreverAberto)}
+                      className={`w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left ${prescreverAberto ? 'border-b border-amber-100' : ''}`}
+                    >
+                      <h3 className="font-serif font-bold text-amber-950 text-base">💉 Prescrever / Aplicar Item do Estoque</h3>
+                      <span className="text-amber-700 text-sm flex-shrink-0">{prescreverAberto ? 'Fechar' : 'Abrir'}</span>
+                    </button>
+                    {prescreverAberto && (
+                    <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3 p-4 bg-amber-50/40">
                       <div className="flex-1">
                         <select
                           value={selectedProdutoId}
@@ -1238,6 +1261,7 @@ function Dashboard() {
                         Lançar na Ficha
                       </button>
                     </form>
+                    )}
                   </div>
 
                   <div className="border border-amber-200/80 rounded-xl overflow-hidden">

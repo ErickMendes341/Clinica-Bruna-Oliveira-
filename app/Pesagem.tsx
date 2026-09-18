@@ -36,11 +36,16 @@ export default function Pesagem({
   altura,
   metaPeso,
   onMudou,
+  aberto,
+  onAlternar,
 }: {
   pacienteId: string;
   altura?: number | null;
   metaPeso?: number | null;
   onMudou?: () => void;
+  // A seção abre e fecha pelo cabeçalho; fechada mostra só o resumo.
+  aberto: boolean;
+  onAlternar: () => void;
 }) {
   const [registros, setRegistros] = useState<Registro[]>([]);
   const [valor, setValor] = useState('');
@@ -110,15 +115,30 @@ export default function Pesagem({
 
   return (
     <div className="bg-white border border-amber-200/70 rounded-xl overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-amber-100 flex items-center justify-between">
-        <h3 className="font-serif font-bold text-amber-950 text-sm">⚖️ Evolução de peso</h3>
-        {registros.length > 0 && (
-          <span className="text-[11px] text-amber-800/60">
-            {registros.length} {registros.length === 1 ? 'pesagem' : 'pesagens'}
-          </span>
-        )}
-      </div>
+      <button
+        type="button"
+        onClick={onAlternar}
+        className={`w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left ${aberto ? 'border-b border-amber-100' : ''}`}
+      >
+        <div className="min-w-0">
+          <h3 className="font-serif font-bold text-amber-950 text-base">
+            ⚖️ Evolução de peso{' '}
+            {registros.length > 0 && (
+              <span className="text-amber-700/70 font-sans text-sm">({registros.length})</span>
+            )}
+          </h3>
+          {!aberto && atual && (
+            <p className="text-xs text-amber-800/70 mt-0.5 truncate">
+              atual: {kg(atual.peso)} em {dataCurta(atual.data)}
+              {varUltima !== null && ` · ${delta(varUltima)} desde a última`}
+            </p>
+          )}
+        </div>
+        <span className="text-amber-700 text-sm flex-shrink-0">{aberto ? 'Fechar' : 'Abrir'}</span>
+      </button>
 
+      {aberto && (
+        <>
       {/* ---------- Registro rápido ---------- */}
       <form onSubmit={registrar} className="px-5 py-4 bg-amber-50/40 border-b border-amber-100">
         <div className="flex flex-col sm:flex-row gap-2">
@@ -215,6 +235,8 @@ export default function Pesagem({
               ))}
             </div>
           </details>
+        </>
+      )}
         </>
       )}
     </div>
