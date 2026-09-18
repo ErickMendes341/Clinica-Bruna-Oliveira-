@@ -33,6 +33,12 @@ const TIPOS = [
 
 const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
 
+/* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
+function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
+  if (ag.tipo === 'outros' && ag.observacao?.trim()) return ag.observacao.trim();
+  return infoTipo(ag.tipo).label;
+}
+
 function infoTipo(id: string) {
   return TIPOS.find((t) => t.id === id) ?? TIPOS[TIPOS.length - 1];
 }
@@ -147,6 +153,7 @@ export default function AgendarRetorno({
   const [hora, setHora] = useState('');
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
+  const [descricaoOutros, setDescricaoOutros] = useState('');
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -185,13 +192,25 @@ export default function AgendarRetorno({
     setHora('');
     setTipo('retorno');
     setProfissional('Bruna');
+    setDescricaoOutros('');
     setErro('');
+  }
+
+  // "Outros" precisa dizer o que é; o texto vai para observacao e vira o
+  // nome do atendimento na agenda.
+  function validarOutros() {
+    if (tipo === 'outros' && !descricaoOutros.trim()) {
+      setErro('Escreva qual é o procedimento ou lembrete.');
+      return false;
+    }
+    return true;
   }
 
   // ACRESCENTA uma consulta. Não cancela nada: o mesmo paciente pode ter
   // medicação semana que vem e retorno no mês seguinte ao mesmo tempo.
   async function agendar() {
     setErro('');
+    if (!validarOutros()) return;
     setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
 
@@ -202,6 +221,7 @@ export default function AgendarRetorno({
         hora: hora || null,
         tipo,
         profissional: profissional || null,
+        observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
         criado_por: sessao.user?.id ?? null,
       },
     ]);
@@ -220,10 +240,18 @@ export default function AgendarRetorno({
 
   async function remarcar(ag: Ag) {
     setErro('');
+    if (!validarOutros()) return;
     setSalvando(true);
     const { error } = await supabase
       .from('agendamentos')
-      .update({ data, hora: hora || null, tipo, profissional: profissional || null })
+      .update({
+        data,
+        hora: hora || null,
+        tipo,
+        profissional: profissional || null,
+        // Se virou "Outros", guarda a descrição; se deixou de ser, preserva a observação antiga.
+        observacao: tipo === 'outros' ? descricaoOutros.trim() : ag.tipo === 'outros' ? null : ag.observacao ?? null,
+      })
       .eq('id', ag.id);
 
     setSalvando(false);
@@ -251,6 +279,7 @@ export default function AgendarRetorno({
     setHora(ag.hora ? ag.hora.slice(0, 5) : '');
     setTipo(ag.tipo);
     setProfissional(ag.profissional || infoTipo(ag.tipo).profissional);
+    setDescricaoOutros(ag.tipo === 'outros' ? ag.observacao ?? '' : '');
     setErro('');
   }
 
@@ -258,7 +287,7 @@ export default function AgendarRetorno({
     if (!telefone) return null;
     const num = telefone.replace(/\D/g, '');
     const comDDI = num.startsWith('55') ? num : `55${num}`;
-    const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${infoTipo(ag.tipo).label}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Até lá!`;
+    const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Até lá!`;
     return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
   }
 
@@ -310,6 +339,17 @@ export default function AgendarRetorno({
           </option>
         ))}
       </select>
+
+      {tipo === 'outros' && (
+        <input
+          type="text"
+          value={descricaoOutros}
+          onChange={(e) => setDescricaoOutros(e.target.value)}
+          placeholder="Qual procedimento ou lembrete? *"
+          autoFocus
+          className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm outline-none focus:border-amber-500"
+        />
+      )}
 
       <select
         value={profissional}
@@ -374,7 +414,7 @@ export default function AgendarRetorno({
                       )}
                     </p>
                     <p className="text-xs mt-0.5">
-                      <span className="font-bold">{info.label}</span>
+                      <span className="font-bold">{rotuloDe(ag)}</span>
                       {ag.profissional && <span className="opacity-80"> · {ag.profissional}</span>}
                       {ag.status === 'confirmado' && (
                         <span className="text-emerald-700 font-semibold"> · confirmado</span>

@@ -1,12 +1,13 @@
 'use client';
 
-import './globals.css';
 import { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import AuthGate from './AuthGate';
 import Agenda from './Agenda';
 import Pesagem from './Pesagem';
 import AgendarRetorno from './AgendarRetorno';
+import Pagamentos from './Pagamentos';
+import Financeiro from './Financeiro';
 
 interface Product {
   id: string;
@@ -74,7 +75,7 @@ interface ConsumoPaciente {
 // Uma "página" do app: em qual aba você está e, se for o caso, qual ficha
 // está aberta. É o que empilhamos para o botão de voltar funcionar.
 interface Vista {
-  tab: 'estoque' | 'pacientes' | 'agenda';
+  tab: 'estoque' | 'pacientes' | 'agenda' | 'financeiro';
   pacienteId: string | null;
 }
 
@@ -86,7 +87,7 @@ const CATEGORIAS = [
 ];
 
 function Dashboard() {
-  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda'>('agenda');
+  const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda' | 'financeiro'>('agenda');
   const [proximoAgendamento, setProximoAgendamento] = useState<string | null>(null);
   const [pilhaVistas, setPilhaVistas] = useState<Vista[]>([]);
   
@@ -757,6 +758,12 @@ function Dashboard() {
                   👤 Pacientes
                 </button>
                 <button
+                  onClick={() => irPara({ tab: 'financeiro', pacienteId: null })}
+                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'financeiro' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                >
+                  💰 Financeiro
+                </button>
+                <button
                   onClick={() => irPara({ tab: 'estoque', pacienteId: null })}
                   className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm relative' : 'text-amber-900 hover:text-amber-950'}`}
                 >
@@ -832,6 +839,9 @@ function Dashboard() {
 
         {/* VIEW: AGENDA — lembretes de quem vem, quem falta marcar e quem sumiu */}
         {mainTab === 'agenda' && <Agenda onAbrirPaciente={abrirPacientePorId} />}
+
+        {/* VIEW: FINANCEIRO — pagamentos de todos os pacientes, por mês ou geral */}
+        {mainTab === 'financeiro' && <Financeiro onAbrirPaciente={abrirPacientePorId} />}
 
         {/* VIEW: PACIENTES */}
         {mainTab === 'pacientes' && (
@@ -1186,6 +1196,11 @@ function Dashboard() {
                       metaPeso={selectedPaciente.meta_peso}
                       onMudou={fetchPacientes}
                     />
+                  </div>
+
+                  {/* O que o paciente já pagou; a aba Financeiro soma tudo */}
+                  <div className="print:hidden">
+                    <Pagamentos pacienteId={selectedPaciente.id} />
                   </div>
 
                   <div className="bg-amber-50/40 p-4 rounded-xl border border-amber-200/60 print:hidden">

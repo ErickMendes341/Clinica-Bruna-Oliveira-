@@ -138,8 +138,10 @@ function infoTipo(id: string) {
   return TIPOS.find((t) => t.id === id) ?? TIPOS[TIPOS.length - 1];
 }
 
-function rotuloTipo(id: string) {
-  return infoTipo(id).label;
+/* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
+function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
+  if (ag.tipo === 'outros' && ag.observacao?.trim()) return ag.observacao.trim();
+  return infoTipo(ag.tipo).label;
 }
 
 /* ------------------------------------------------------------------ */
@@ -571,13 +573,13 @@ function DetalheAgendamento({
               style={{ backgroundColor: infoTipo(ag.tipo).cor }}
             />
             <span className="text-xs font-semibold" style={{ color: infoTipo(ag.tipo).cor }}>
-              {rotuloTipo(ag.tipo)}
+              {rotuloDe(ag)}
             </span>
             {ag.profissional && (
               <span className="text-xs text-amber-800/70">· com {ag.profissional}</span>
             )}
           </div>
-          {ag.observacao && (
+          {ag.observacao && ag.tipo !== 'outros' && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {ag.observacao}
             </p>
@@ -907,10 +909,10 @@ function DiaDaAgenda({
                             {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
                           </p>
                           <p className="text-[10px] font-semibold truncate opacity-80">
-                            {info(ag).label}
+                            {rotuloDe(ag)}
                             {ag.profissional ? ` · ${ag.profissional}` : ''}
                           </p>
-                          {ag.observacao && (
+                          {ag.observacao && ag.tipo !== 'outros' && (
                             <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
                           )}
 
@@ -948,7 +950,7 @@ function DiaDaAgenda({
                     onClick={() => onSelecionarAgendamento(a)}
                     className="text-xs bg-amber-100 hover:bg-amber-200 text-amber-900 font-semibold px-3 py-1.5 rounded-lg transition-colors"
                   >
-                    {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {rotuloTipo(a.tipo)}
+                    {a.pacientes?.nome ? primeiroNome(a.pacientes.nome) : 'Paciente'} · {rotuloDe(a)}
                   </button>
                 ))}
               </div>
@@ -1172,7 +1174,7 @@ function LinhaAgendamento({
   const tel = ag.pacientes?.telefone;
   const link = zap(
     tel,
-    `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloTipo(ag.tipo)}) do dia ${dataCurta(ag.data)}. Podemos confirmar?`
+    `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloDe(ag)}) do dia ${dataCurta(ag.data)}. Podemos confirmar?`
   );
 
   return (
@@ -1202,7 +1204,7 @@ function LinhaAgendamento({
           {mostrarDia && <span className="capitalize">{diaDaSemana(ag.data)}, </span>}
           {dataCurta(ag.data)}
           {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} •{' '}
-          <span className="font-bold">{rotuloTipo(ag.tipo)}</span>
+          <span className="font-bold">{rotuloDe(ag)}</span>
           {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
 
@@ -1381,6 +1383,10 @@ function FormNovoAgendamento({
     }
     if (!modoNovo && !pacienteId) {
       setErro('Escolha o paciente ou cadastre um novo.');
+      return;
+    }
+    if (tipo === 'outros' && !obs.trim()) {
+      setErro('Escreva qual é o procedimento ou lembrete.');
       return;
     }
 
@@ -1622,14 +1628,16 @@ function FormNovoAgendamento({
 
       <div>
         <label className="block text-xs font-semibold text-amber-900 mb-1">
-          Observação (opcional) — aparece na grade do dia
+          {tipo === 'outros'
+            ? 'Qual procedimento ou lembrete? *'
+            : 'Observação (opcional) — aparece na grade do dia'}
         </label>
         <input
           type="text"
           value={obs}
           onChange={(e) => setObs(e.target.value)}
-          placeholder="Ex: primeira consulta, trazer exames"
-          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
+          placeholder={tipo === 'outros' ? 'Ex: entrega de exames, avaliação postural' : 'Ex: primeira consulta, trazer exames'}
+          className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${tipo === 'outros' ? 'border-amber-300 focus:border-amber-500' : 'border-amber-200'}`}
         />
       </div>
 
