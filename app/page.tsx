@@ -8,6 +8,7 @@ import Pesagem from './Pesagem';
 import AgendarRetorno from './AgendarRetorno';
 import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
+import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 
 interface Product {
   id: string;
@@ -436,6 +437,25 @@ function Dashboard() {
     }
   }
 
+  /* ---------- Ficha para o paciente preencher ----------
+     Gera um link único (vale 7 dias) e abre o WhatsApp com a mensagem.
+     O que o paciente enviar cai em "Fichas recebidas" para a equipe aceitar. */
+  async function handleEnviarFicha(p: Paciente) {
+    const r = await criarConviteFicha(p.id);
+    if (!r.ok) return alert(`Não foi possível gerar o link: ${r.msg}`);
+    const msg = `Olá ${p.nome.trim().split(' ')[0]}, aqui é da clínica Dra. Bruna Oliveira. Para adiantar seu atendimento, preencha sua ficha neste link (leva 3 minutos): ${r.link}`;
+    if (p.telefone) {
+      window.open(getWhatsAppLink(p.telefone, msg), '_blank', 'noreferrer');
+    } else {
+      try {
+        await navigator.clipboard.writeText(r.link);
+        alert('Paciente sem telefone. O link foi copiado — envie por onde preferir.');
+      } catch {
+        prompt('Paciente sem telefone. Copie o link:', r.link);
+      }
+    }
+  }
+
   /* ---------- Arquivar x excluir ----------
      Prontuário tem guarda obrigatória: paciente que parou de vir deve ser
      arquivado, não apagado. Excluir de vez existe para cadastro duplicado
@@ -857,6 +877,12 @@ function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             <div className="space-y-6 print:hidden">
+              {/* Fichas que os próprios pacientes preencheram pelo link /ficha */}
+              <CadastrosRecebidos
+                pacientes={pacientes.filter((p) => !p.arquivado_em).map((p) => ({ id: p.id, nome: p.nome }))}
+                onMudou={fetchPacientes}
+              />
+
               <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
                 <div className="flex justify-between items-center mb-4">
                   <h2 className="text-lg font-serif font-bold text-amber-950">
@@ -1091,6 +1117,13 @@ function Dashboard() {
                             💬 Contatar no WhatsApp
                           </a>
                         )}
+                        <button
+                          onClick={() => handleEnviarFicha(selectedPaciente)}
+                          title="Manda um link para o paciente preencher a própria ficha no celular"
+                          className="text-xs bg-white border border-emerald-700 text-emerald-800 hover:bg-emerald-50 font-semibold px-3 py-2 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+                        >
+                          📲 Pedir ficha
+                        </button>
                         <button
                           onClick={() => window.print()}
                           className="text-xs bg-amber-900 hover:bg-amber-950 text-white font-semibold px-4 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
