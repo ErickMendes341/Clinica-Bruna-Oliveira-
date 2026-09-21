@@ -25,6 +25,8 @@ interface Agendamento {
   hora?: string;
   hora_fim?: string | null;
   tipo: string;
+  // Pacote de sessões criado de uma vez (toda semana por N vezes).
+  serie_id?: string | null;
   status: string;
   observacao?: string;
   profissional?: string | null;
@@ -150,6 +152,13 @@ function faixa(ag: { hora?: string | null; hora_fim?: string | null }) {
   if (!ag.hora) return '';
   const ini = ag.hora.slice(0, 5);
   return ag.hora_fim ? `${ini}–${ag.hora_fim.slice(0, 5)}` : ini;
+}
+
+/* Datas de um pacote: a primeira e mais (vezes-1) repetições a cada N dias. */
+function datasDaSerie(primeira: string, cadaDias: number, vezes: number) {
+  const out: string[] = [];
+  for (let i = 0; i < vezes; i++) out.push(somaDias(primeira, i * cadaDias));
+  return out;
 }
 
 function somaMin(hhmm: string, min: number) {
@@ -568,8 +577,35 @@ function DetalheAgendamento({
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
+  // Posição deste na série e quantos ainda vêm depois (para "este e os próximos").
+  const [posicao, setPosicao] = useState<{ n: number; total: number } | null>(null);
+  const [proximosDaSerie, setProximosDaSerie] = useState(0);
+
+  useEffect(() => {
+    if (!ag.serie_id) return;
+    supabase
+      .from('agendamentos')
+      .select('id,data,hora')
+      .eq('serie_id', ag.serie_id)
+      .in('status', ['agendado', 'confirmado'])
+      .order('data')
+      .order('hora')
+      .then(({ data }) => {
+        const lista = (data as { id: string; data: string }[]) || [];
+        const i = lista.findIndex((x) => x.id === ag.id);
+        setPosicao(i >= 0 ? { n: i + 1, total: lista.length } : null);
+        setProximosDaSerie(i >= 0 ? lista.length - i - 1 : 0);
+      });
+  }, [ag.id, ag.serie_id]);
 
   const nome = ag.pacientes?.nome?.trim() || 'Paciente';
+  const temProximos = !!ag.serie_id && proximosDaSerie > 0;
+
+  // Alvo de desmarcar/excluir: só este, ou este e os que vêm depois na série.
+  function filtroAlvo<T extends { eq: (c: string, v: string) => T; gte: (c: string, v: string) => T }>(q: T, incluirProximos: boolean) {
+    if (incluirProximos && ag.serie_id) return q.eq('serie_id', ag.serie_id).gte('data', ag.data);
+    return q.eq('id', ag.id);
+  }
 
   async function remarcar() {
     if (novaHora && novaHoraFim && paraMin(novaHoraFim) <= paraMin(novaHora)) {
@@ -586,19 +622,20 @@ function DetalheAgendamento({
     onMudou();
   }
 
-  async function desmarcar() {
+  async function desmarcar(incluirProximos = false) {
     setSalvando(true);
     setErro('');
-    const { error } = await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', ag.id);
+    const { error } = await filtroAlvo(supabase.from('agendamentos').update({ status: 'cancelado' }), incluirProximos)
+      .in('status', ['agendado', 'confirmado']);
     setSalvando(false);
     if (error) return setErro(error.message);
     onMudou();
   }
 
-  async function excluir() {
+  async function excluir(incluirProximos = false) {
     setSalvando(true);
     setErro('');
-    const { error } = await supabase.from('agendamentos').delete().eq('id', ag.id);
+    const { error } = await filtroAlvo(supabase.from('agendamentos').delete(), incluirProximos);
     setSalvando(false);
     if (error) return setErro(error.message);
     onMudou();
@@ -618,6 +655,7 @@ function DetalheAgendamento({
           <p className="text-xs text-amber-800/70 mt-0.5 capitalize">
             {porExtenso(ag.data)}
             {ag.hora ? ` · ${faixa(ag)}` : ' · sem horário'}
+            {posicao && <span className="normal-case"> · 🔁 sessão {posicao.n} de {posicao.total}</span>}
           </p>
           <div className="flex items-center gap-2 mt-1.5">
             <span
@@ -707,12 +745,22 @@ function DetalheAgendamento({
 
           {/* Desmarcou: fica registrado que houve um cancelamento */}
           <button
-            onClick={desmarcar}
+            onClick={() => desmarcar(false)}
             disabled={salvando}
             className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50 transition-colors"
           >
             🚫 Desmarcou — sai da agenda, fica no histórico
+            {temProximos && <span className="block text-[11px] font-normal text-amber-800/70">só esta sessão</span>}
           </button>
+          {temProximos && (
+            <button
+              onClick={() => desmarcar(true)}
+              disabled={salvando}
+              className="w-full text-left px-4 py-3 rounded-xl border border-amber-200 text-sm font-semibold text-amber-900 hover:bg-amber-50 disabled:opacity-50 transition-colors"
+            >
+              🚫🔁 Desmarcou o pacote — esta e as {proximosDaSerie} próximas
+            </button>
+          )}
 
           {/* Digitação errada: some de vez */}
           {confirmandoExclusao ? (
@@ -728,12 +776,21 @@ function DetalheAgendamento({
                   Voltar
                 </button>
                 <button
-                  onClick={excluir}
+                  onClick={() => excluir(false)}
                   disabled={salvando}
                   className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
                 >
-                  {salvando ? 'Excluindo…' : 'Excluir'}
+                  {salvando ? 'Excluindo…' : temProximos ? 'Só esta' : 'Excluir'}
                 </button>
+                {temProximos && (
+                  <button
+                    onClick={() => excluir(true)}
+                    disabled={salvando}
+                    className="flex-1 bg-red-800 hover:bg-red-900 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
+                  >
+                    Esta e as próximas
+                  </button>
+                )}
               </div>
             </div>
           ) : (
@@ -957,7 +1014,7 @@ function DiaDaAgenda({
                           }}
                         >
                           <p className="text-xs font-bold truncate">
-                            <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}
+                            <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}{ag.serie_id ? '🔁 ' : ''}
                             {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
                           </p>
                           <p className="text-[10px] font-semibold truncate opacity-80">
@@ -1256,7 +1313,7 @@ function LinhaAgendamento({
           {mostrarDia && <span className="capitalize">{diaDaSemana(ag.data)}, </span>}
           {dataCurta(ag.data)}
           {ag.hora ? ` · ${faixa(ag)}` : ''} •{' '}
-          <span className="font-bold">{rotuloDe(ag)}</span>
+          {ag.serie_id ? '🔁 ' : ''}<span className="font-bold">{rotuloDe(ag)}</span>
           {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
 
@@ -1379,6 +1436,9 @@ function FormNovoAgendamento({
   const [data, setData] = useState(dataInicial || hojeISO());
   const [hora, setHora] = useState(horaInicial || '');
   const [horaFim, setHoraFim] = useState(horaInicial ? somaMin(horaInicial, 30) : '');
+  // Pacote de sessões: repete a cada N dias, V vezes (a primeira já conta).
+  const [repetirDias, setRepetirDias] = useState(0);
+  const [vezes, setVezes] = useState(4);
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [obs, setObs] = useState('');
@@ -1425,6 +1485,8 @@ function FormNovoAgendamento({
     setObs('');
     setHora('');
     setHoraFim('');
+    setRepetirDias(0);
+    setVezes(4);
     setModoNovo(false);
     setNovoNome('');
     setNovoTelefone('');
@@ -1471,18 +1533,21 @@ function FormNovoAgendamento({
       idParaAgendar = (criado as { id: string }).id;
     }
 
-    const { error } = await supabase.from('agendamentos').insert([
-      {
+    const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
+    const serie = datas.length > 1 ? crypto.randomUUID() : null;
+    const { error } = await supabase.from('agendamentos').insert(
+      datas.map((d) => ({
         paciente_id: idParaAgendar,
-        data,
+        data: d,
         hora: hora || null,
         hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
         observacao: obs || null,
+        serie_id: serie,
         criado_por: sessao.user?.id ?? null,
-      },
-    ]);
+      }))
+    );
 
     setSalvando(false);
     if (error) {
@@ -1655,6 +1720,37 @@ function FormNovoAgendamento({
         <div className="col-span-2">
           <label className="block text-xs font-semibold text-amber-900 mb-1">Horário</label>
           <ChegadaSaida hora={hora} setHora={setHora} horaFim={horaFim} setHoraFim={setHoraFim} config={config} />
+        </div>
+        <div className="col-span-2 sm:col-span-3">
+          <label className="block text-xs font-semibold text-amber-900 mb-1">Repetir (pacote de sessões)</label>
+          <div className="flex flex-wrap items-center gap-2">
+            <select
+              value={repetirDias}
+              onChange={(e) => setRepetirDias(Number(e.target.value))}
+              className="px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+            >
+              <option value={0}>Não repete</option>
+              <option value={7}>Toda semana</option>
+              <option value={14}>A cada 15 dias</option>
+            </select>
+            {repetirDias > 0 && (
+              <>
+                <select
+                  value={vezes}
+                  onChange={(e) => setVezes(Number(e.target.value))}
+                  className="px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+                >
+                  {Array.from({ length: 23 }, (_, i) => i + 2).map((n) => (
+                    <option key={n} value={n}>{n} vezes</option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-amber-800/80 capitalize">
+                  {datasDaSerie(data, repetirDias, vezes).map((d) => dataCurta(d)).join(' · ')}
+                  {hora ? ` · sempre às ${hora}` : ''}
+                </span>
+              </>
+            )}
+          </div>
         </div>
         <div className="col-span-2">
           <label className="block text-xs font-semibold text-amber-900 mb-1">Procedimento</label>

@@ -9,6 +9,7 @@ interface Ag {
   hora?: string | null;
   hora_fim?: string | null;
   tipo: string;
+  serie_id?: string | null;
   status: string;
   observacao?: string | null;
   profissional?: string | null;
@@ -81,6 +82,23 @@ function faixa(ag: { hora?: string | null; hora_fim?: string | null }) {
   if (!ag.hora) return '';
   const ini = ag.hora.slice(0, 5);
   return ag.hora_fim ? `${ini}–${ag.hora_fim.slice(0, 5)}` : ini;
+}
+
+function somaDias(iso: string, dias: number) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function dataCurta(iso: string) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit' });
+}
+
+/* Datas de um pacote: a primeira e mais (vezes-1) repetições a cada N dias. */
+function datasDaSerie(primeira: string, cadaDias: number, vezes: number) {
+  const out: string[] = [];
+  for (let i = 0; i < vezes; i++) out.push(somaDias(primeira, i * cadaDias));
+  return out;
 }
 
 function somaMin(hhmm: string, min: number) {
@@ -200,6 +218,9 @@ export default function AgendarRetorno({
   const [data, setData] = useState(hojeISO());
   const [hora, setHora] = useState('');
   const [horaFim, setHoraFim] = useState('');
+  // Pacote de sessões: repete a cada N dias, V vezes (a primeira já conta).
+  const [repetirDias, setRepetirDias] = useState(0);
+  const [vezes, setVezes] = useState(4);
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [descricaoOutros, setDescricaoOutros] = useState('');
@@ -210,7 +231,7 @@ export default function AgendarRetorno({
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
       supabase
         .from('agendamentos')
-        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional')
+        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional,serie_id')
         .eq('paciente_id', pacienteId)
         .in('status', ['agendado', 'confirmado'])
         .gte('data', hojeISO())
@@ -240,6 +261,8 @@ export default function AgendarRetorno({
     setData(hojeISO());
     setHora('');
     setHoraFim('');
+    setRepetirDias(0);
+    setVezes(4);
     setTipo('retorno');
     setProfissional('Bruna');
     setDescricaoOutros('');
@@ -268,18 +291,21 @@ export default function AgendarRetorno({
     setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
 
-    const { error } = await supabase.from('agendamentos').insert([
-      {
+    const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
+    const serie = datas.length > 1 ? crypto.randomUUID() : null;
+    const { error } = await supabase.from('agendamentos').insert(
+      datas.map((d) => ({
         paciente_id: pacienteId,
-        data,
+        data: d,
         hora: hora || null,
         hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
         observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
+        serie_id: serie,
         criado_por: sessao.user?.id ?? null,
-      },
-    ]);
+      }))
+    );
 
     setSalvando(false);
     if (error) {
@@ -321,8 +347,21 @@ export default function AgendarRetorno({
     onMudou?.();
   }
 
+  // Quantos da mesma série vêm depois deste (só os que ainda estão na lista).
+  function proximosDaSerie(ag: Ag) {
+    if (!ag.serie_id) return 0;
+    return lista.filter((x) => x.serie_id === ag.serie_id && x.data > ag.data).length;
+  }
+
   async function cancelar(ag: Ag) {
-    const { error } = await supabase.from('agendamentos').update({ status: 'cancelado' }).eq('id', ag.id);
+    const n = proximosDaSerie(ag);
+    let todos = false;
+    if (n > 0) {
+      todos = confirm(`Este atendimento faz parte de um pacote com mais ${n} sessão(ões) depois dele.\n\nOK = cancelar esta e as ${n} próximas\nCancelar = cancelar só esta`);
+    }
+    let q = supabase.from('agendamentos').update({ status: 'cancelado' });
+    q = todos ? q.eq('serie_id', ag.serie_id!).gte('data', ag.data).in('status', ['agendado', 'confirmado']) : q.eq('id', ag.id);
+    const { error } = await q;
     if (error) return setErro(`Não foi possível cancelar: ${error.message}`);
     await carregar();
     onMudou?.();
@@ -383,6 +422,38 @@ export default function AgendarRetorno({
       </p>
 
       <ChegadaSaida hora={hora} setHora={setHora} horaFim={horaFim} setHoraFim={setHoraFim} config={config} />
+
+      {!remarcandoId && (
+        <div className="space-y-1">
+          <div className="flex gap-2">
+            <select
+              value={repetirDias}
+              onChange={(e) => setRepetirDias(Number(e.target.value))}
+              className="flex-1 px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+            >
+              <option value={0}>Não repete</option>
+              <option value={7}>Toda semana</option>
+              <option value={14}>A cada 15 dias</option>
+            </select>
+            {repetirDias > 0 && (
+              <select
+                value={vezes}
+                onChange={(e) => setVezes(Number(e.target.value))}
+                className="flex-1 px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
+              >
+                {Array.from({ length: 23 }, (_, i) => i + 2).map((n) => (
+                  <option key={n} value={n}>{n} vezes</option>
+                ))}
+              </select>
+            )}
+          </div>
+          {repetirDias > 0 && (
+            <p className="text-[11px] text-amber-800/80 capitalize">
+              🔁 {datasDaSerie(data, repetirDias, vezes).map(dataCurta).join(' · ')}
+            </p>
+          )}
+        </div>
+      )}
 
       <select
         value={tipo}
@@ -471,6 +542,7 @@ export default function AgendarRetorno({
                       )}
                     </p>
                     <p className="text-xs mt-0.5">
+                      {ag.serie_id && <span title="Faz parte de um pacote de sessões">🔁 </span>}
                       <span className="font-bold">{rotuloDe(ag)}</span>
                       {ag.profissional && <span className="opacity-80"> · {ag.profissional}</span>}
                       {ag.status === 'confirmado' && (
