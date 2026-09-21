@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { avisarNoWhatsApp } from '@/lib/zap';
 
 /* ------------------------------------------------------------------ */
 /* Tipos                                                               */
@@ -105,11 +106,35 @@ function paraMin(hhmm: string) {
   return Number(h) * 60 + Number(m);
 }
 
-function zap(telefone: string | undefined, msg: string) {
-  if (!telefone) return null;
-  const num = telefone.replace(/\D/g, '');
-  const comDDI = num.startsWith('55') ? num : `55${num}`;
-  return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
+/* Botão de WhatsApp que sempre aparece: sem telefone, pede o número,
+   salva na ficha e abre a conversa. */
+function BotaoZap({
+  pacienteId,
+  nome,
+  telefone,
+  mensagem,
+  rotulo,
+  onTelefoneSalvo,
+}: {
+  pacienteId: string;
+  nome: string;
+  telefone?: string | null;
+  mensagem: string;
+  rotulo: string;
+  onTelefoneSalvo?: () => void;
+}) {
+  return (
+    <button
+      onClick={async () => {
+        const tel = await avisarNoWhatsApp({ pacienteId, nome, telefone, mensagem });
+        if (tel && tel !== (telefone ?? '')) onTelefoneSalvo?.();
+      }}
+      title={telefone ? 'Abrir WhatsApp com a mensagem pronta' : 'Sem telefone: vai pedir o número e salvar na ficha'}
+      className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
+    >
+      💬 {rotulo}{!telefone ? ' (sem tel.)' : ''}
+    </button>
+  );
 }
 
 /* Cada procedimento carrega quem atende e a cor na agenda.
@@ -459,6 +484,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         {deHoje.map((a) => (
           <LinhaAgendamento
             key={a.id}
+            onMudou={recarregarTudo}
             ag={a}
             onStatus={mudarStatus}
             onAbrir={onAbrirPaciente}
@@ -479,6 +505,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         {proximos.map((a) => (
           <LinhaAgendamento
             key={a.id}
+            onMudou={recarregarTudo}
             ag={a}
             onStatus={mudarStatus}
             onAbrir={onAbrirPaciente}
@@ -511,7 +538,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         }
       >
         {sumidos.map((p) => (
-          <LinhaPaciente key={p.id} p={p} onAbrir={onAbrirPaciente} tom="alerta" />
+          <LinhaPaciente key={p.id} p={p} onAbrir={onAbrirPaciente} tom="alerta" onMudou={recarregarTudo} />
         ))}
       </Secao>
 
@@ -525,7 +552,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         resumo={resumoDeNomes(nomesDePacientes(retornosVisiveis))}
       >
         {retornosVisiveis.map((p) => (
-          <LinhaPaciente key={p.id} p={p} onAbrir={onAbrirPaciente} />
+          <LinhaPaciente key={p.id} p={p} onAbrir={onAbrirPaciente} onMudou={recarregarTudo} />
         ))}
         {retornosAMarcar.length > retornosVisiveis.length && (
           <button
@@ -1272,19 +1299,18 @@ function LinhaAgendamento({
   onAbrir,
   onEditar,
   mostrarDia,
+  onMudou,
 }: {
   ag: Agendamento;
   onStatus: (id: string, status: string) => void;
   onAbrir?: (id: string) => void;
   onEditar?: (ag: Agendamento) => void;
   mostrarDia?: boolean;
+  onMudou?: () => void;
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
-  const link = zap(
-    tel,
-    `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloDe(ag)}) do dia ${dataCurta(ag.data)}. Podemos confirmar?`
-  );
+  const msgConfirmar = `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloDe(ag)}) do dia ${dataCurta(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Podemos confirmar?`;
 
   return (
     <div
@@ -1333,16 +1359,7 @@ function LinhaAgendamento({
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-        {link && (
-          <a
-            href={link}
-            target="_blank"
-            rel="noreferrer"
-            className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-          >
-            💬 Confirmar
-          </a>
-        )}
+        <BotaoZap pacienteId={ag.paciente_id} nome={nome} telefone={tel} mensagem={msgConfirmar} rotulo="Confirmar" onTelefoneSalvo={onMudou} />
         <button
           onClick={() => onStatus(ag.id, 'compareceu')}
           className="text-[11px] bg-amber-800 hover:bg-amber-900 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
@@ -1373,15 +1390,14 @@ function LinhaPaciente({
   p,
   onAbrir,
   tom,
+  onMudou,
 }: {
   p: PainelPaciente;
   onAbrir?: (id: string) => void;
   tom?: 'alerta';
+  onMudou?: () => void;
 }) {
-  const link = zap(
-    p.telefone,
-    `Olá ${primeiroNome(p.nome)}, aqui é da clínica Dra. Bruna Oliveira. Sentimos sua falta! Vamos agendar seu retorno?`
-  );
+  const msgChamar = `Olá ${primeiroNome(p.nome)}, aqui é da clínica Dra. Bruna Oliveira. Sentimos sua falta! Vamos agendar seu retorno?`;
 
   return (
     <div className="px-6 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/40 transition-colors">
@@ -1398,16 +1414,7 @@ function LinhaPaciente({
           {p.pref_contato === 'ligar' ? ' • 📞 prefere ligação' : ''}
         </p>
       </div>
-      {link && (
-        <a
-          href={link}
-          target="_blank"
-          rel="noreferrer"
-          className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors flex-shrink-0"
-        >
-          💬 Chamar
-        </a>
-      )}
+      <BotaoZap pacienteId={p.id} nome={p.nome} telefone={p.telefone} mensagem={msgChamar} rotulo="Chamar" onTelefoneSalvo={onMudou} />
     </div>
   );
 }

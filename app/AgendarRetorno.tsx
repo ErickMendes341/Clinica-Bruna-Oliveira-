@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { avisarNoWhatsApp } from '@/lib/zap';
 
 interface Ag {
   id: string;
@@ -379,12 +380,18 @@ export default function AgendarRetorno({
     setErro('');
   }
 
-  function linkZap(ag: Ag) {
-    if (!telefone) return null;
-    const num = telefone.replace(/\D/g, '');
-    const comDDI = num.startsWith('55') ? num : `55${num}`;
+  // Telefone pode ser cadastrado na hora do primeiro aviso; guardamos aqui
+  // para os próximos cliques não perguntarem de novo.
+  const [telAtual, setTelAtual] = useState(telefone ?? '');
+  useEffect(() => setTelAtual(telefone ?? ''), [telefone]);
+
+  async function avisar(ag: Ag) {
     const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Até lá!`;
-    return `https://wa.me/${comDDI}?text=${encodeURIComponent(msg)}`;
+    const tel = await avisarNoWhatsApp({ pacienteId, nome: pacienteNome ?? '', telefone: telAtual, mensagem: msg });
+    if (tel && tel !== telAtual) {
+      setTelAtual(tel);
+      onMudou?.();
+    }
   }
 
   /* ---------------- Campos compartilhados por agendar e remarcar ---------------- */
@@ -523,8 +530,6 @@ export default function AgendarRetorno({
         <div className="divide-y divide-amber-100">
           {lista.map((ag) => {
             const info = infoTipo(ag.tipo);
-            const zap = linkZap(ag);
-
             return (
               <div
                 key={ag.id}
@@ -552,16 +557,13 @@ export default function AgendarRetorno({
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0">
-                    {zap && (
-                      <a
-                        href={zap}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-                      >
-                        💬 Avisar
-                      </a>
-                    )}
+                    <button
+                      onClick={() => avisar(ag)}
+                      title={telAtual ? 'Mandar lembrete no WhatsApp' : 'Sem telefone: vai pedir o número e salvar na ficha'}
+                      className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                    >
+                      💬 Avisar{!telAtual ? ' (sem tel.)' : ''}
+                    </button>
                     <button
                       onClick={() => (remarcandoId === ag.id ? setRemarcandoId(null) : abrirRemarcacao(ag))}
                       className="text-[11px] bg-white/80 hover:bg-white text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
