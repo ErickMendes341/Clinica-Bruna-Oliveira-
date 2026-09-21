@@ -23,6 +23,7 @@ interface Agendamento {
   paciente_id: string;
   data: string;
   hora?: string;
+  hora_fim?: string | null;
   tipo: string;
   status: string;
   observacao?: string;
@@ -144,6 +145,18 @@ function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
   return infoTipo(ag.tipo).label;
 }
 
+/* "08:00–08:30", "08:00" ou "" — chegada e saída como aparecem na tela. */
+function faixa(ag: { hora?: string | null; hora_fim?: string | null }) {
+  if (!ag.hora) return '';
+  const ini = ag.hora.slice(0, 5);
+  return ag.hora_fim ? `${ini}–${ag.hora_fim.slice(0, 5)}` : ini;
+}
+
+function somaMin(hhmm: string, min: number) {
+  const t = Math.min(paraMin(hhmm) + min, 23 * 60 + 55);
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
 /* ------------------------------------------------------------------ */
 /* Seletor de horário — só dentro do funcionamento da clínica          */
 /* ------------------------------------------------------------------ */
@@ -203,6 +216,41 @@ function SeletorHora({
 /* ------------------------------------------------------------------ */
 /* Componente principal                                                */
 /* ------------------------------------------------------------------ */
+
+/* Chegada e saída lado a lado. Ao escolher a chegada, a saída é sugerida
+   30 min depois (quem marca ajusta se o atendimento for mais longo).   */
+function ChegadaSaida({
+  hora,
+  setHora,
+  horaFim,
+  setHoraFim,
+  config,
+}: {
+  hora: string;
+  setHora: (v: string) => void;
+  horaFim: string;
+  setHoraFim: (v: string) => void;
+  config: Config;
+}) {
+  function mudarChegada(v: string) {
+    setHora(v);
+    if (!v) return setHoraFim('');
+    if (!horaFim || paraMin(horaFim) <= paraMin(v)) setHoraFim(somaMin(v, 30));
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-[11px] font-semibold text-amber-900/80 mb-1">Chegada</label>
+        <SeletorHora hora={hora} setHora={mudarChegada} config={config} />
+      </div>
+      <div>
+        <label className="block text-[11px] font-semibold text-amber-900/80 mb-1">Saída</label>
+        {/* A saída pode ser na última hora do expediente (ex.: 19h), por isso +1h. */}
+        <SeletorHora hora={horaFim} setHora={setHoraFim} config={{ ...config, hora_fim: somaMin(config.hora_fim, 60) }} />
+      </div>
+    </div>
+  );
+}
 
 export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: string) => void }) {
   const [painel, setPainel] = useState<PainelPaciente[]>([]);
@@ -515,6 +563,7 @@ function DetalheAgendamento({
 }) {
   const [novaData, setNovaData] = useState(ag.data);
   const [novaHora, setNovaHora] = useState(ag.hora ? ag.hora.slice(0, 5) : '');
+  const [novaHoraFim, setNovaHoraFim] = useState(ag.hora_fim ? ag.hora_fim.slice(0, 5) : '');
   const [remarcando, setRemarcando] = useState(false);
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -523,11 +572,14 @@ function DetalheAgendamento({
   const nome = ag.pacientes?.nome?.trim() || 'Paciente';
 
   async function remarcar() {
+    if (novaHora && novaHoraFim && paraMin(novaHoraFim) <= paraMin(novaHora)) {
+      return setErro('A saída precisa ser depois da chegada.');
+    }
     setSalvando(true);
     setErro('');
     const { error } = await supabase
       .from('agendamentos')
-      .update({ data: novaData, hora: novaHora || null })
+      .update({ data: novaData, hora: novaHora || null, hora_fim: novaHora && novaHoraFim ? novaHoraFim : null })
       .eq('id', ag.id);
     setSalvando(false);
     if (error) return setErro(error.message);
@@ -565,7 +617,7 @@ function DetalheAgendamento({
           <h2 className="text-lg font-serif font-bold text-amber-950">{nome}</h2>
           <p className="text-xs text-amber-800/70 mt-0.5 capitalize">
             {porExtenso(ag.data)}
-            {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ' · sem horário'}
+            {ag.hora ? ` · ${faixa(ag)}` : ' · sem horário'}
           </p>
           <div className="flex items-center gap-2 mt-1.5">
             <span
@@ -627,7 +679,7 @@ function DetalheAgendamento({
                 onChange={(e) => setNovaData(e.target.value)}
                 className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none"
               />
-              <SeletorHora hora={novaHora} setHora={setNovaHora} config={config} />
+              <ChegadaSaida hora={novaHora} setHora={setNovaHora} horaFim={novaHoraFim} setHoraFim={setNovaHoraFim} config={config} />
               <div className="flex gap-2">
                 <button
                   onClick={() => setRemarcando(false)}
@@ -905,7 +957,7 @@ function DiaDaAgenda({
                           }}
                         >
                           <p className="text-xs font-bold truncate">
-                            <span className="tabular-nums opacity-70">{ag.hora?.slice(0, 5)}</span>{' '}
+                            <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}
                             {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
                           </p>
                           <p className="text-[10px] font-semibold truncate opacity-80">
@@ -1203,7 +1255,7 @@ function LinhaAgendamento({
         <p className="text-xs opacity-80 mt-0.5">
           {mostrarDia && <span className="capitalize">{diaDaSemana(ag.data)}, </span>}
           {dataCurta(ag.data)}
-          {ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''} •{' '}
+          {ag.hora ? ` · ${faixa(ag)}` : ''} •{' '}
           <span className="font-bold">{rotuloDe(ag)}</span>
           {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
@@ -1326,6 +1378,7 @@ function FormNovoAgendamento({
   // seguinte sem ninguém reparar. Agora nasce no dia que está na tela.
   const [data, setData] = useState(dataInicial || hojeISO());
   const [hora, setHora] = useState(horaInicial || '');
+  const [horaFim, setHoraFim] = useState(horaInicial ? somaMin(horaInicial, 30) : '');
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [obs, setObs] = useState('');
@@ -1346,7 +1399,10 @@ function FormNovoAgendamento({
   // Quando a pessoa clica num horário livre da grade, o formulário já vem pronto.
   useEffect(() => {
     if (dataInicial) setData(dataInicial);
-    if (horaInicial) setHora(horaInicial);
+    if (horaInicial) {
+      setHora(horaInicial);
+      setHoraFim(somaMin(horaInicial, 30));
+    }
   }, [dataInicial, horaInicial]);
 
   const filtrados = busca.trim()
@@ -1368,6 +1424,7 @@ function FormNovoAgendamento({
     setBusca('');
     setObs('');
     setHora('');
+    setHoraFim('');
     setModoNovo(false);
     setNovoNome('');
     setNovoTelefone('');
@@ -1387,6 +1444,10 @@ function FormNovoAgendamento({
     }
     if (tipo === 'outros' && !obs.trim()) {
       setErro('Escreva qual é o procedimento ou lembrete.');
+      return;
+    }
+    if (hora && horaFim && paraMin(horaFim) <= paraMin(hora)) {
+      setErro('A saída precisa ser depois da chegada.');
       return;
     }
 
@@ -1415,6 +1476,7 @@ function FormNovoAgendamento({
         paciente_id: idParaAgendar,
         data,
         hora: hora || null,
+        hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
         observacao: obs || null,
@@ -1436,7 +1498,7 @@ function FormNovoAgendamento({
     <form onSubmit={salvar} className="px-6 pb-6 pt-2 space-y-3 border-t border-amber-100">
       {horaInicial && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Horário escolhido na grade: <strong>{dataCurta(data)} às {hora}</strong>
+          Horário escolhido na grade: <strong>{dataCurta(data)} às {hora}</strong>{horaFim ? ` (até ${horaFim})` : ''}
         </p>
       )}
 
@@ -1590,9 +1652,9 @@ function FormNovoAgendamento({
             ))}
           </div>
         </div>
-        <div>
+        <div className="col-span-2">
           <label className="block text-xs font-semibold text-amber-900 mb-1">Horário</label>
-          <SeletorHora hora={hora} setHora={setHora} config={config} />
+          <ChegadaSaida hora={hora} setHora={setHora} horaFim={horaFim} setHoraFim={setHoraFim} config={config} />
         </div>
         <div className="col-span-2">
           <label className="block text-xs font-semibold text-amber-900 mb-1">Procedimento</label>

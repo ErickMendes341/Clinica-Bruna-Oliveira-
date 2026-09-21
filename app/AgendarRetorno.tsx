@@ -7,6 +7,7 @@ interface Ag {
   id: string;
   data: string;
   hora?: string | null;
+  hora_fim?: string | null;
   tipo: string;
   status: string;
   observacao?: string | null;
@@ -75,6 +76,18 @@ function paraMin(hhmm: string) {
   return Number(h) * 60 + Number(m);
 }
 
+/* "08:00–08:30", "08:00" ou "" — chegada e saída como aparecem na tela. */
+function faixa(ag: { hora?: string | null; hora_fim?: string | null }) {
+  if (!ag.hora) return '';
+  const ini = ag.hora.slice(0, 5);
+  return ag.hora_fim ? `${ini}–${ag.hora_fim.slice(0, 5)}` : ini;
+}
+
+function somaMin(hhmm: string, min: number) {
+  const t = Math.min(paraMin(hhmm) + min, 23 * 60 + 55);
+  return `${String(Math.floor(t / 60)).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}`;
+}
+
 /* Só oferece horário dentro do funcionamento da clínica. */
 function SeletorHora({
   hora,
@@ -127,6 +140,41 @@ function SeletorHora({
   );
 }
 
+/* Chegada e saída lado a lado. Ao escolher a chegada, a saída é sugerida
+   30 min depois (quem marca ajusta se o atendimento for mais longo).   */
+function ChegadaSaida({
+  hora,
+  setHora,
+  horaFim,
+  setHoraFim,
+  config,
+}: {
+  hora: string;
+  setHora: (v: string) => void;
+  horaFim: string;
+  setHoraFim: (v: string) => void;
+  config: Config;
+}) {
+  function mudarChegada(v: string) {
+    setHora(v);
+    if (!v) return setHoraFim('');
+    if (!horaFim || paraMin(horaFim) <= paraMin(v)) setHoraFim(somaMin(v, 30));
+  }
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <div>
+        <label className="block text-[11px] font-semibold text-amber-900/80 mb-1">Chegada</label>
+        <SeletorHora hora={hora} setHora={mudarChegada} config={config} />
+      </div>
+      <div>
+        <label className="block text-[11px] font-semibold text-amber-900/80 mb-1">Saída</label>
+        {/* A saída pode ser na última hora do expediente (ex.: 19h), por isso +1h. */}
+        <SeletorHora hora={horaFim} setHora={setHoraFim} config={{ ...config, hora_fim: somaMin(config.hora_fim, 60) }} />
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /* Próximas consultas do paciente                                      */
 /* ------------------------------------------------------------------ */
@@ -151,6 +199,7 @@ export default function AgendarRetorno({
 
   const [data, setData] = useState(hojeISO());
   const [hora, setHora] = useState('');
+  const [horaFim, setHoraFim] = useState('');
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [descricaoOutros, setDescricaoOutros] = useState('');
@@ -161,7 +210,7 @@ export default function AgendarRetorno({
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
       supabase
         .from('agendamentos')
-        .select('id,data,hora,tipo,status,observacao,profissional')
+        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional')
         .eq('paciente_id', pacienteId)
         .in('status', ['agendado', 'confirmado'])
         .gte('data', hojeISO())
@@ -190,6 +239,7 @@ export default function AgendarRetorno({
   function limpar() {
     setData(hojeISO());
     setHora('');
+    setHoraFim('');
     setTipo('retorno');
     setProfissional('Bruna');
     setDescricaoOutros('');
@@ -201,6 +251,10 @@ export default function AgendarRetorno({
   function validarOutros() {
     if (tipo === 'outros' && !descricaoOutros.trim()) {
       setErro('Escreva qual é o procedimento ou lembrete.');
+      return false;
+    }
+    if (hora && horaFim && paraMin(horaFim) <= paraMin(hora)) {
+      setErro('A saída precisa ser depois da chegada.');
       return false;
     }
     return true;
@@ -219,6 +273,7 @@ export default function AgendarRetorno({
         paciente_id: pacienteId,
         data,
         hora: hora || null,
+        hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
         observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
@@ -247,6 +302,7 @@ export default function AgendarRetorno({
       .update({
         data,
         hora: hora || null,
+        hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
         // Se virou "Outros", guarda a descrição; se deixou de ser, preserva a observação antiga.
@@ -277,6 +333,7 @@ export default function AgendarRetorno({
     setFormAberto(false);
     setData(ag.data);
     setHora(ag.hora ? ag.hora.slice(0, 5) : '');
+    setHoraFim(ag.hora_fim ? ag.hora_fim.slice(0, 5) : '');
     setTipo(ag.tipo);
     setProfissional(ag.profissional || infoTipo(ag.tipo).profissional);
     setDescricaoOutros(ag.tipo === 'outros' ? ag.observacao ?? '' : '');
@@ -325,7 +382,7 @@ export default function AgendarRetorno({
         {data === hojeISO() && <span className="normal-case font-semibold"> · hoje</span>}
       </p>
 
-      <SeletorHora hora={hora} setHora={setHora} config={config} />
+      <ChegadaSaida hora={hora} setHora={setHora} horaFim={horaFim} setHoraFim={setHoraFim} config={config} />
 
       <select
         value={tipo}
@@ -408,7 +465,7 @@ export default function AgendarRetorno({
                     <p className="text-sm font-serif font-bold capitalize">
                       {porExtenso(ag.data)}
                       {ag.hora ? (
-                        <span className="font-sans tabular-nums opacity-80"> · {ag.hora.slice(0, 5)}</span>
+                        <span className="font-sans tabular-nums opacity-80"> · {faixa(ag)}</span>
                       ) : (
                         <span className="font-sans opacity-60"> · sem hora</span>
                       )}
