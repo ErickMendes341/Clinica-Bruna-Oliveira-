@@ -10,6 +10,12 @@ import { supabase } from '@/lib/supabase';
  */
 const DOMINIO_PADRAO = '@clinicabrunaoliveira.com.br';
 
+/* O login é compartilhado e os computadores ficam na recepção: depois de
+   um tempo parado, o app se tranca sozinho. Avisa 1 minuto antes, para
+   ninguém perder o que está fazendo. */
+const MINUTOS_ATE_SAIR = 30;
+const SEGUNDOS_DE_AVISO = 60;
+
 function paraEmail(usuario: string) {
   const limpo = usuario.trim().toLowerCase();
   return limpo.includes('@') ? limpo : limpo + DOMINIO_PADRAO;
@@ -54,8 +60,69 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   return (
     <>
       <BarraUsuario email={session.user.email ?? ''} />
+      <TrancaPorInatividade />
       {children}
     </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Tranca automática                                                   */
+/* ------------------------------------------------------------------ */
+
+function TrancaPorInatividade() {
+  const [faltam, setFaltam] = useState<number | null>(null);
+
+  useEffect(() => {
+    let ultimoUso = Date.now();
+    let avisando = false;
+
+    const registrarUso = () => {
+      ultimoUso = Date.now();
+      if (avisando) {
+        avisando = false;
+        setFaltam(null);
+      }
+    };
+
+    const eventos: (keyof DocumentEventMap)[] = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    eventos.forEach((e) => document.addEventListener(e, registrarUso, { passive: true }));
+
+    const relogio = setInterval(() => {
+      const parado = (Date.now() - ultimoUso) / 1000;
+      const limite = MINUTOS_ATE_SAIR * 60;
+      if (parado >= limite) {
+        supabase.auth.signOut();
+        return;
+      }
+      if (parado >= limite - SEGUNDOS_DE_AVISO) {
+        avisando = true;
+        setFaltam(Math.ceil(limite - parado));
+      }
+    }, 1000);
+
+    return () => {
+      clearInterval(relogio);
+      eventos.forEach((e) => document.removeEventListener(e, registrarUso));
+    };
+  }, []);
+
+  if (faltam === null) return null;
+
+  return (
+    <div className="fixed inset-x-0 top-0 z-[60] bg-amber-900 text-amber-50 px-4 py-3 shadow-lg print:hidden">
+      <div className="max-w-3xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
+        <p className="text-sm font-semibold">
+          🔒 Sem uso há um tempo — o app vai se trancar em {faltam} segundo{faltam === 1 ? '' : 's'}.
+        </p>
+        <button
+          onClick={() => setFaltam(null)}
+          className="flex-shrink-0 text-xs font-bold bg-amber-50 text-amber-900 px-4 py-2 rounded-lg hover:bg-white transition-colors"
+        >
+          Continuar trabalhando
+        </button>
+      </div>
+    </div>
   );
 }
 

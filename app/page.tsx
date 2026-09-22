@@ -9,6 +9,7 @@ import AgendarRetorno from './AgendarRetorno';
 import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
 import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
+import Backup from './Backup';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
 
 interface Product {
@@ -887,6 +888,8 @@ function Dashboard() {
 
         {/* ALERTAS GERAIS */}
         <div className="space-y-3 print:hidden">
+          {/* Lembrete de cópia de segurança: só aparece quando passa do prazo */}
+          <Backup compacto />
           {aniversariantesHoje.length > 0 && (
             <div className="bg-amber-100 border-l-4 border-amber-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
               <div className="flex items-center space-x-3">
@@ -953,6 +956,9 @@ function Dashboard() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
             <div className="space-y-6 print:hidden">
+              {/* Cópia de segurança de tudo que está no sistema */}
+              <Backup />
+
               {/* Fichas que os próprios pacientes preencheram pelo link /ficha */}
               <CadastrosRecebidos
                 pacientes={pacientes.filter((p) => !p.arquivado_em).map((p) => ({ id: p.id, nome: p.nome }))}
