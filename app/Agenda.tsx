@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { avisarNoWhatsApp } from '@/lib/zap';
+import { limparNome, nomesParecidos } from '@/lib/validacao';
 
 /* ------------------------------------------------------------------ */
 /* Tipos                                                               */
@@ -384,7 +385,8 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   }
 
   async function mudarStatus(id: string, status: string) {
-    await supabase.from('agendamentos').update({ status }).eq('id', id);
+    const { error } = await supabase.from('agendamentos').update({ status }).eq('id', id);
+    if (error) alert(`Não foi possível salvar: ${error.message}`);
     recarregarTudo();
   }
 
@@ -1520,15 +1522,43 @@ function FormNovoAgendamento({
       return;
     }
 
+    // Item 10: avisa (não bloqueia) se quem atende já tem alguém no horário.
+    if (hora && profissional) {
+      const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
+      const { data: choques } = await supabase
+        .from('agendamentos')
+        .select('data, hora, pacientes(nome)')
+        .eq('profissional', profissional)
+        .in('data', datas)
+        .eq('hora', hora)
+        .in('status', ['agendado', 'confirmado']);
+      const lista = (choques ?? []) as unknown as { data: string; pacientes?: { nome: string } | null }[];
+      if (lista.length > 0) {
+        const linhas = lista.map((c) => `• ${dataCurta(c.data)} — ${c.pacientes?.nome?.trim() ?? 'paciente'}`).join('\n');
+        const ok = confirm(`⚠️ ${profissional} já tem atendimento às ${hora}:\n\n${linhas}\n\nMarcar mesmo assim?`);
+        if (!ok) return;
+      }
+    }
+
     setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
     let idParaAgendar = pacienteId;
 
     // Cadastro mínimo: nome e telefone. O resto da ficha se completa na consulta.
     if (modoNovo) {
+      const iguais = nomesParecidos(limparNome(novoNome), pacientes.map((x) => ({ id: x.id, nome: x.nome })));
+      if (iguais.length > 0) {
+        const ok = confirm(
+          `Já existe paciente com nome parecido:\n\n${iguais.map((x) => '• ' + x.nome.trim()).join('\n')}\n\nCriar um cadastro novo mesmo assim?`
+        );
+        if (!ok) {
+          setSalvando(false);
+          return;
+        }
+      }
       const { data: criado, error: erroPaciente } = await supabase
         .from('pacientes')
-        .insert([{ nome: novoNome.trim(), telefone: novoTelefone.trim() || null }])
+        .insert([{ nome: limparNome(novoNome), telefone: novoTelefone.trim() || null }])
         .select('id')
         .single();
 

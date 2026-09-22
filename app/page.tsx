@@ -9,6 +9,7 @@ import AgendarRetorno from './AgendarRetorno';
 import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
 import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
+import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
 
 interface Product {
   id: string;
@@ -80,6 +81,15 @@ interface Vista {
   pacienteId: string | null;
 }
 
+/* Validade: quantos dias faltam (negativo = já venceu). */
+function diasAteValidade(validade?: string) {
+  if (!validade) return null;
+  const v = new Date(validade.slice(0, 10) + 'T12:00:00');
+  const hoje = new Date();
+  hoje.setHours(12, 0, 0, 0);
+  return Math.round((v.getTime() - hoje.getTime()) / 86400000);
+}
+
 const CATEGORIAS = [
   { id: 'todos', label: 'Todos os Itens' },
   { id: 'medicacao', label: 'Medicação' },
@@ -142,6 +152,9 @@ function Dashboard() {
   const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
 
+  // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
+  const [agendadosAmanha, setAgendadosAmanha] = useState<Set<string>>(new Set());
+
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
@@ -160,6 +173,7 @@ function Dashboard() {
       fetchProducts();
       fetchHistorico();
       fetchPacientes();
+      fetchAgendadosAmanha();
     };
 
     const aoVoltar = () => {
@@ -185,6 +199,20 @@ function Dashboard() {
     fetchProducts();
     fetchHistorico();
     fetchPacientes();
+    fetchAgendadosAmanha();
+  }
+
+  async function fetchAgendadosAmanha() {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const amanha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const { data, error } = await supabase
+      .from('agendamentos')
+      .select('paciente_id')
+      .eq('data', amanha)
+      .in('status', ['agendado', 'confirmado']);
+    if (error) return console.error('Erro ao buscar agenda de amanhã:', error);
+    setAgendadosAmanha(new Set((data ?? []).map((x) => (x as { paciente_id: string }).paciente_id)));
   }
 
   async function fetchProducts() {
@@ -205,8 +233,11 @@ function Dashboard() {
 
   async function fetchPacientes() {
     const { data, error } = await supabase.from('pacientes').select('*').order('nome', { ascending: true });
-    if (error) console.error('Erro ao buscar pacientes:', error);
-    else if (data) setPacientes(data);
+    if (error) return console.error('Erro ao buscar pacientes:', error);
+    if (!data) return;
+    setPacientes(data);
+    // A ficha aberta acompanha o banco: peso, telefone e afins não ficam velhos.
+    setSelectedPaciente((atual) => (atual ? data.find((x) => x.id === atual.id) ?? atual : atual));
   }
 
   async function fetchConsumos(pacienteId: string) {
@@ -235,7 +266,7 @@ function Dashboard() {
     setNome(p.nome || '');
     setCategoria(p.categoria || 'medicacao');
     setLote(p.lote || '');
-    setQuantidade(String(p.quantidade || 0));
+    setQuantidade('');
     setPreco(String(p.preco_custo || 0));
     setValidade(p.validade || '');
     window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -243,13 +274,16 @@ function Dashboard() {
 
   async function handleAddProduct(e: React.FormEvent) {
     e.preventDefault();
-    if (!nome || !quantidade || !preco) return alert('Preencha Nome, Quantidade e Preço!');
+    if (!nome || !preco) return alert('Preencha Nome e Preço!');
+    if (!editingProductId && !quantidade) return alert('Informe a quantidade inicial!');
 
+    // Ao editar, a quantidade NÃO entra: ela só muda pelos botões + / −,
+    // que registram histórico. Senão, salvar um formulário aberto há
+    // minutos desfaria as baixas feitas nesse meio-tempo.
     const payload = {
       nome,
       categoria,
       lote: lote || null,
-      quantidade: parseInt(quantidade),
       quantidade_minima: 10,
       preco_custo: parseFloat(preco),
       validade: validade || null,
@@ -385,7 +419,24 @@ function Dashboard() {
 
   async function handleSavePaciente(e: React.FormEvent) {
     e.preventDefault();
-    if (!nomePaciente.trim()) return alert('Informe o nome do paciente!');
+    const nomeLimpo = limparNome(nomePaciente);
+    if (!nomeLimpo) return alert('Informe o nome do paciente!');
+    if (cpfPaciente.trim() && !cpfValido(cpfPaciente)) {
+      return alert('CPF inválido. Confira os números (ou deixe em branco).');
+    }
+    if (telPaciente.trim() && !telefoneValido(telPaciente)) {
+      return alert('Telefone inválido. Use DDD + 8 ou 9 dígitos.');
+    }
+    // Cadastro novo com nome parecido: pergunta antes de criar duplicado.
+    if (!editingPacienteId) {
+      const iguais = nomesParecidos(nomeLimpo, pacientes.map((x) => ({ id: x.id, nome: x.nome })));
+      if (iguais.length > 0) {
+        const ok = confirm(
+          `Já existe paciente com nome parecido:\n\n${iguais.map((x) => '• ' + x.nome.trim()).join('\n')}\n\nCadastrar assim mesmo?`
+        );
+        if (!ok) return;
+      }
+    }
 
     let alturaParsed: number | null = null;
     if (altura) {
@@ -397,8 +448,8 @@ function Dashboard() {
     if (peso) pesoParsed = parseFloat(String(peso).replace(',', '.'));
 
     const payload = {
-      nome: nomePaciente, 
-      cpf: cpfPaciente || null, 
+      nome: nomeLimpo,
+      cpf: cpfPaciente ? formatarCPF(cpfPaciente) : null, 
       telefone: telPaciente || null,
       data_nascimento: dataNascimento || null,
       peso: pesoParsed,
@@ -483,8 +534,31 @@ function Dashboard() {
     fetchPacientes();
   }
 
+  /* Excluir de vez só vale para cadastro vazio/duplicado. Paciente com
+     pagamento, item aplicado, pesagem ou consulta tem prontuário e
+     registro financeiro — esse só pode ser arquivado.               */
   async function handleDeletePaciente(p: Paciente) {
-    await supabase.from('consumos_paciente').delete().eq('paciente_id', p.id);
+    const [pag, con, pes, ag] = await Promise.all([
+      supabase.from('pagamentos').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
+      supabase.from('consumos_paciente').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
+      supabase.from('pesagens').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
+      supabase.from('agendamentos').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
+    ]);
+    const partes = [
+      pag.count ? `${pag.count} pagamento(s)` : '',
+      con.count ? `${con.count} item(ns) aplicado(s)` : '',
+      pes.count ? `${pes.count} pesagem(ns)` : '',
+      ag.count ? `${ag.count} agendamento(s)` : '',
+    ].filter(Boolean);
+
+    if (partes.length > 0) {
+      alert(
+        `Este paciente não pode ser excluído porque tem histórico:\n\n• ${partes.join('\n• ')}\n\n` +
+          'Use "Arquivar" — ele sai da lista e o prontuário fica guardado.'
+      );
+      return;
+    }
+
     const { error } = await supabase.from('pacientes').delete().eq('id', p.id);
 
     if (error) {
@@ -601,19 +675,6 @@ function Dashboard() {
     return nascimento.getDate() === hoje.getDate() && nascimento.getMonth() === hoje.getMonth();
   }
 
-  function ehRetornoAmanha(dataRetornoStr?: string) {
-    if (!dataRetornoStr) return false;
-    const retorno = dataLocal(dataRetornoStr);
-    const amanha = new Date();
-    amanha.setDate(amanha.getDate() + 1);
-
-    return (
-      retorno.getDate() === amanha.getDate() &&
-      retorno.getMonth() === amanha.getMonth() &&
-      retorno.getFullYear() === amanha.getFullYear()
-    );
-  }
-
   function getWhatsAppLink(telefone?: string, mensagemCustomizada?: string) {
     if (!telefone) return '#';
     const numLimpo = telefone.replace(/\D/g, '');
@@ -668,6 +729,12 @@ function Dashboard() {
     const qtd = parseInt(qtdConsumo);
     if (isNaN(qtd) || qtd <= 0) return alert('Quantidade inválida!');
 
+    const prod = produtosAtivos.find((x) => x.id === selectedProdutoId);
+    const diasProd = diasAteValidade(prod?.validade);
+    if (diasProd !== null && diasProd < 0) {
+      return alert(`${prod?.nome} está VENCIDO (validade ${new Date(prod!.validade! + 'T12:00:00').toLocaleDateString('pt-BR')}). Não dá para aplicar.`);
+    }
+
     const { error } = await supabase.rpc('aplicar_item', {
       p_paciente_id: selectedPaciente.id,
       p_produto_id: selectedProdutoId,
@@ -703,8 +770,17 @@ function Dashboard() {
     });
 
   const produtosEstoqueBaixo = produtosAtivos.filter(p => p.quantidade < 10);
+  const produtosVencidos = produtosAtivos.filter((p) => {
+    const d = diasAteValidade(p.validade);
+    return d !== null && d < 0;
+  });
+  const produtosVencendo = produtosAtivos.filter((p) => {
+    const d = diasAteValidade(p.validade);
+    return d !== null && d >= 0 && d <= 30;
+  });
   const aniversariantesHoje = pacientes.filter(p => ehAniversarianteHoje(p.data_nascimento));
-  const retornosAmanha = pacientes.filter(p => ehRetornoAmanha(p.data_retorno));
+  // Item 9: o lembrete de amanhã vem da agenda de verdade, não do campo antigo.
+  const retornosAmanha = pacientes.filter((p) => agendadosAmanha.has(p.id));
 
   const arquivados = pacientes.filter((p) => p.arquivado_em);
 
@@ -904,11 +980,11 @@ function Dashboard() {
                   <div className="grid grid-cols-2 gap-2">
                     <div>
                       <label className="block text-xs font-semibold text-amber-900 mb-1">CPF</label>
-                      <input type="text" value={cpfPaciente} onChange={(e) => setCpfPaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="000.000.000-00" />
+                      <input type="text" inputMode="numeric" value={cpfPaciente} onChange={(e) => setCpfPaciente(formatarCPF(e.target.value))} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="000.000.000-00" />
                     </div>
                     <div>
                       <label className="block text-xs font-semibold text-amber-900 mb-1">Telefone</label>
-                      <input type="text" value={telPaciente} onChange={(e) => setTelPaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="(35) 90000-0000" />
+                      <input type="tel" inputMode="tel" value={telPaciente} onChange={(e) => setTelPaciente(formatarTelefoneBR(e.target.value))} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="(35) 90000-0000" />
                     </div>
                   </div>
 
@@ -1044,7 +1120,7 @@ function Dashboard() {
                   ) : (
                     filteredPacientes.map((p) => {
                       const eAniversario = ehAniversarianteHoje(p.data_nascimento);
-                      const eRetorno = ehRetornoAmanha(p.data_retorno);
+                      const eRetorno = agendadosAmanha.has(p.id);
                       return (
                         <div
                           key={p.id}
@@ -1097,7 +1173,7 @@ function Dashboard() {
                               🎂 Aniversariante de Hoje!
                             </span>
                           )}
-                          {ehRetornoAmanha(selectedPaciente.data_retorno) && (
+                          {agendadosAmanha.has(selectedPaciente.id) && (
                             <span className="text-[10px] uppercase font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
                               🔔 Retorno Amanhã!
                             </span>
@@ -1270,11 +1346,15 @@ function Dashboard() {
                           required
                         >
                           <option value="">Selecione o medicamento/suplemento...</option>
-                          {produtosAtivos.map((p) => (
-                            <option key={p.id} value={p.id} disabled={p.quantidade <= 0}>
-                              {p.nome} (Disponível: {p.quantidade} un. {p.quantidade < 10 ? '⚠️' : ''})
-                            </option>
-                          ))}
+                          {produtosAtivos.map((p) => {
+                            const d = diasAteValidade(p.validade);
+                            return (
+                              <option key={p.id} value={p.id} disabled={p.quantidade <= 0 || (d !== null && d < 0)}>
+                                {p.nome} ({d !== null && d < 0 ? 'VENCIDO' : `Disponível: ${p.quantidade} un.`}
+                                {p.quantidade < 10 && !(d !== null && d < 0) ? ' ⚠️' : ''})
+                              </option>
+                            );
+                          })}
                         </select>
                       </div>
 
@@ -1418,6 +1498,29 @@ function Dashboard() {
               </div>
             )}
 
+            {(produtosVencidos.length > 0 || produtosVencendo.length > 0) && (
+              <div className="bg-amber-100 border-l-4 border-amber-700 p-4 rounded-xl shadow-sm">
+                <div className="flex items-start space-x-3">
+                  <span className="text-2xl">📅</span>
+                  <div className="text-xs text-amber-950 space-y-1">
+                    <h4 className="font-serif font-bold text-sm">Validade</h4>
+                    {produtosVencidos.length > 0 && (
+                      <p>
+                        <strong className="text-red-800">Vencidos ({produtosVencidos.length}):</strong>{" "}
+                        {produtosVencidos.map((p) => p.nome).join(", ")} — não dá para aplicar em paciente.
+                      </p>
+                    )}
+                    {produtosVencendo.length > 0 && (
+                      <p>
+                        <strong>Vencem em até 30 dias ({produtosVencendo.length}):</strong>{" "}
+                        {produtosVencendo.map((p) => `${p.nome} (${diasAteValidade(p.validade)}d)`).join(", ")}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
               <div className="flex justify-between items-center mb-4">
                 <h2 className="text-lg font-serif font-bold text-amber-950">
@@ -1446,10 +1549,19 @@ function Dashboard() {
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Nº do Lote</label>
                   <input type="text" placeholder="Ex: L1234" value={lote} onChange={(e) => setLote(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" />
                 </div>
-                <div>
-                  <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. *</label>
-                  <input type="number" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
-                </div>
+                {editingProductId ? (
+                  <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. atual</label>
+                    <p className="px-3 py-2 text-sm text-amber-900/70 bg-amber-50/60 border border-amber-100 rounded-lg">
+                      muda pelos botões + / −
+                    </p>
+                  </div>
+                ) : (
+                  <div>
+                    <label className="block text-xs font-semibold text-amber-900 mb-1">Qtd. inicial *</label>
+                    <input type="number" min="0" value={quantidade} onChange={(e) => setQuantidade(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Preço Custo (R$) *</label>
                   <input type="number" step="0.01" value={preco} onChange={(e) => setPreco(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none" required />
@@ -1505,6 +1617,7 @@ function Dashboard() {
                   <tbody className="divide-y divide-amber-100">
                     {filteredProducts.map((p) => {
                       const isBaixo = p.quantidade < 10;
+                      const dias = diasAteValidade(p.validade);
                       return (
                         <tr key={p.id} className={`transition-colors ${isBaixo ? 'bg-red-50/60 hover:bg-red-100/60' : 'hover:bg-amber-50/30'}`}>
                           <td className="py-3 px-3 font-medium text-amber-950">
@@ -1523,7 +1636,15 @@ function Dashboard() {
                             {p.quantidade} un.
                           </td>
                           <td className="py-3 px-3 text-amber-950">R$ {Number(p.preco_custo || 0).toFixed(2)}</td>
-                          <td className="py-3 px-3 text-xs text-amber-800">{p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}</td>
+                          <td className="py-3 px-3 text-xs text-amber-800">
+                            {p.validade ? new Date(p.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : '-'}
+                            {dias !== null && dias < 0 && (
+                              <span className="block text-[10px] font-bold text-red-700">VENCIDO</span>
+                            )}
+                            {dias !== null && dias >= 0 && dias <= 30 && (
+                              <span className="block text-[10px] font-bold text-amber-700">vence em {dias} dia{dias === 1 ? '' : 's'}</span>
+                            )}
+                          </td>
                           <td className="py-3 px-3 text-center space-x-1">
                             {p.arquivado_em ? (
                               <button onClick={() => handleRestaurarProduto(p)} title="Restaurar ao estoque" className="bg-emerald-700 hover:bg-emerald-800 text-white px-3 py-1 rounded-md text-xs font-semibold">↩ Restaurar</button>
@@ -1617,12 +1738,11 @@ function ModalGerenciarPaciente({
           {confirmando ? (
             <div className="p-3 border border-red-300 bg-red-50 rounded-xl space-y-2">
               <p className="text-xs text-red-800 font-semibold leading-relaxed">
-                Excluir de vez apaga também o histórico de medicamentos aplicados, as pesagens e os
-                agendamentos deste paciente. Não tem como desfazer.
+                Excluir de vez some com o cadastro sem deixar registro. Não tem como desfazer.
               </p>
               <p className="text-xs text-red-800">
-                Use só para cadastro duplicado ou criado por engano. Se foi paciente de verdade,
-                arquive.
+                Só funciona para cadastro vazio: quem já tem pagamento, item aplicado, pesagem ou
+                agendamento é protegido pelo app — esse deve ser arquivado.
               </p>
               <div className="flex gap-2">
                 <button

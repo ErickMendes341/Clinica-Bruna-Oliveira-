@@ -3,6 +3,7 @@
 import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { supabase } from '@/lib/supabase';
+import { cpfValido, formatarCPF, formatarTelefoneBR, limparNome, telefoneValido } from '@/lib/validacao';
 
 /**
  * Formulário que o paciente preenche no celular, sem login.
@@ -26,22 +27,6 @@ const BEBIDAS = [
 const campo =
   'w-full px-4 py-3 text-base bg-white border border-amber-200 rounded-xl outline-none focus:border-amber-500 transition-colors';
 const rotulo = 'block text-sm font-semibold text-amber-900 mb-1.5';
-
-function mascaraTelefone(v: string) {
-  const d = v.replace(/\D/g, '').slice(0, 11);
-  if (d.length <= 2) return d;
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
-}
-
-function mascaraCPF(v: string) {
-  const d = v.replace(/\D/g, '').slice(0, 11);
-  return d
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d)/, '$1.$2')
-    .replace(/(\d{3})(\d{1,2})$/, '$1-$2');
-}
 
 export default function PaginaFicha() {
   return (
@@ -117,15 +102,16 @@ function Formulario() {
   async function enviar(e: React.FormEvent) {
     e.preventDefault();
     setErro('');
-    if (nome.trim().length < 3) return setErro('Escreva seu nome completo.');
-    if (telefone.replace(/\D/g, '').length < 10) return setErro('Informe um telefone com DDD.');
+    if (limparNome(nome).length < 3) return setErro('Escreva seu nome completo.');
+    if (!telefoneValido(telefone)) return setErro('Informe um telefone com DDD (8 ou 9 dígitos).');
+    if (cpf.trim() && !cpfValido(cpf)) return setErro('CPF inválido. Confira os números (ou deixe em branco).');
     if (!consentimento) return setErro('Para enviar, marque que concorda com o uso dos dados.');
 
     setEnviando(true);
     const { data, error } = await supabase.rpc('enviar_ficha', {
       p_token: token || null,
       p_dados: {
-        nome: nome.trim(),
+        nome: limparNome(nome),
         telefone: telefone.trim(),
         cpf: cpf.trim(),
         data_nascimento: nascimento,
@@ -214,11 +200,11 @@ function Formulario() {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label htmlFor="telefone" className={rotulo}>Telefone / WhatsApp *</label>
-            <input id="telefone" type="tel" required inputMode="tel" autoComplete="tel" placeholder="(35) 99999-9999" value={telefone} onChange={(e) => setTelefone(mascaraTelefone(e.target.value))} className={campo} />
+            <input id="telefone" type="tel" required inputMode="tel" autoComplete="tel" placeholder="(35) 99999-9999" value={telefone} onChange={(e) => setTelefone(formatarTelefoneBR(e.target.value))} className={campo} />
           </div>
           <div>
             <label htmlFor="cpf" className={rotulo}>CPF</label>
-            <input id="cpf" type="text" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(mascaraCPF(e.target.value))} className={campo} />
+            <input id="cpf" type="text" inputMode="numeric" placeholder="000.000.000-00" value={cpf} onChange={(e) => setCpf(formatarCPF(e.target.value))} className={campo} />
           </div>
         </div>
 

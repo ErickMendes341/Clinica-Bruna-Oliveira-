@@ -98,8 +98,10 @@ export default function Pesagem({
     setSalvando(false);
   }
 
-  async function remover(id: string) {
-    await supabase.from('pesagens').delete().eq('id', id);
+  async function remover(r: Registro) {
+    if (!confirm(`Apagar a pesagem de ${kg(r.peso)} do dia ${dataCurta(r.data)}?`)) return;
+    const { error } = await supabase.from('pesagens').delete().eq('id', r.id);
+    if (error) return setErro(`Não foi possível apagar: ${error.message}`);
     carregar();
     onMudou?.();
   }
@@ -224,7 +226,7 @@ export default function Pesagem({
                   <div className="flex items-center gap-3">
                     <span className="text-xs text-amber-800/70">{dataCurta(r.data)}</span>
                     <button
-                      onClick={() => remover(r.id)}
+                      onClick={() => remover(r)}
                       title="Remover esta pesagem"
                       className="text-xs text-amber-700/60 hover:text-red-700 px-1"
                     >
