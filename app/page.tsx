@@ -153,6 +153,8 @@ function Dashboard() {
   const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
   const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
+  // O cadastro de paciente fica recolhido: a busca e a lista ganham o espaço.
+  const [formPacienteAberto, setFormPacienteAberto] = useState(false);
 
   // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
   const [agendadosAmanha, setAgendadosAmanha] = useState<Set<string>>(new Set());
@@ -383,6 +385,7 @@ function Dashboard() {
 
   // --- PACIENTES HANDLERS ---
   function limpaFormularioPaciente() {
+    setFormPacienteAberto(false);
     setEditingPacienteId(null);
     setNomePaciente('');
     setCpfPaciente('');
@@ -799,7 +802,7 @@ function Dashboard() {
   if (!mounted) return null;
 
   return (
-    <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8">
+    <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8 pb-24 sm:pb-8 print:pb-0">
       <div className="max-w-6xl mx-auto space-y-6">
         
         {/* CABEÇALHO — enxuto e sempre à mão: gruda no topo quando a tela rola */}
@@ -842,7 +845,7 @@ function Dashboard() {
             </div>
 
             {/* Abas: alvos grandes, lado a lado, sem quebrar em telas estreitas */}
-            <nav className="mt-2.5 grid grid-cols-4 gap-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50 print:hidden">
+            <nav className="hidden sm:grid mt-2.5 grid-cols-4 gap-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50 print:hidden">
               {([
                 { id: 'agenda', icone: '🔔', rotulo: 'Agenda' },
                 { id: 'pacientes', icone: '👤', rotulo: 'Pacientes' },
@@ -899,6 +902,35 @@ function Dashboard() {
           />
         </div>
 
+        {/* No celular a navegação vai para o rodapé, ao alcance do polegar */}
+        <nav className="sm:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-amber-200 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] print:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
+          <div className="grid grid-cols-4">
+            {([
+              { id: 'agenda', icone: '🔔', rotulo: 'Agenda' },
+              { id: 'pacientes', icone: '👤', rotulo: 'Pacientes' },
+              { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
+              { id: 'estoque', icone: '📦', rotulo: 'Estoque' },
+            ] as const).map((aba) => (
+              <button
+                key={aba.id}
+                onClick={() => irPara({ tab: aba.id, pacienteId: null })}
+                className={`relative flex flex-col items-center gap-0.5 py-2.5 text-[11px] font-semibold transition-colors ${
+                  mainTab === aba.id ? 'text-amber-900' : 'text-amber-800/50'
+                }`}
+              >
+                <span className="text-xl leading-none">{aba.icone}</span>
+                {aba.rotulo}
+                {mainTab === aba.id && <span className="absolute top-0 inset-x-4 h-0.5 bg-amber-800 rounded-full" />}
+                {aba.id === 'estoque' && produtosEstoqueBaixo.length > 0 && (
+                  <span className="absolute top-1.5 right-1/4 bg-red-600 text-white text-[9px] w-3.5 h-3.5 rounded-full flex items-center justify-center font-bold">
+                    !
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </nav>
+
         {/* VIEW: AGENDA — lembretes de quem vem, quem falta marcar e quem sumiu */}
         {mainTab === 'agenda' && <Agenda onAbrirPaciente={abrirPacientePorId} />}
 
@@ -919,19 +951,29 @@ function Dashboard() {
                 onMudou={fetchPacientes}
               />
 
-              <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60">
-                <div className="flex justify-between items-center mb-4">
-                  <h2 className="text-lg font-serif font-bold text-amber-950">
-                    <span id="form-paciente">{editingPacienteId ? 'Editar Paciente' : 'Novo Paciente'}</span>
+              <div className="bg-white rounded-2xl shadow-sm border border-amber-200/60 overflow-hidden">
+                <div className="flex justify-between items-center gap-2 px-5 py-3.5">
+                  <h2 className="text-base font-serif font-bold text-amber-950">
+                    <span id="form-paciente">{editingPacienteId ? '✏️ Editar paciente' : '➕ Novo paciente'}</span>
                   </h2>
-                  {editingPacienteId && (
-                    <button onClick={limpaFormularioPaciente} className="text-xs text-amber-700 hover:underline">
+                  {editingPacienteId ? (
+                    <button onClick={limpaFormularioPaciente} className="text-xs font-semibold text-amber-700 hover:underline flex-shrink-0">
                       Cancelar
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setFormPacienteAberto(!formPacienteAberto)}
+                      className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-200 text-amber-800 hover:bg-amber-50 flex-shrink-0"
+                    >
+                      {formPacienteAberto ? 'Fechar' : 'Cadastrar'}
                     </button>
                   )}
                 </div>
 
-                <form onSubmit={handleSavePaciente} className="space-y-3">
+                <form
+                  onSubmit={handleSavePaciente}
+                  className={`space-y-3 px-5 pb-5 ${editingPacienteId || formPacienteAberto ? '' : 'hidden'}`}
+                >
                   <div>
                     <label className="block text-xs font-semibold text-amber-900 mb-1">Nome Completo *</label>
                     <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="Ex: Lucas Andrade" required />
