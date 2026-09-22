@@ -102,6 +102,12 @@ function primeiroNome(nome: string) {
   return nome.trim().split(/\s+/)[0];
 }
 
+/* Hora cheia de agora (14 às 14:37), ou null se não for hoje. */
+function horaAtualSeHoje(dia: string) {
+  if (dia !== hojeISO()) return null;
+  return new Date().getHours();
+}
+
 function paraMin(hhmm: string) {
   const [h, m] = hhmm.slice(0, 5).split(':');
   return Number(h) * 60 + Number(m);
@@ -143,15 +149,15 @@ function BotaoZap({
    nunca aparecem sozinhas: o nome do procedimento e da profissional vêm
    escritos do lado. */
 const TIPOS = [
-  { id: 'consulta_nova', label: 'Consulta nova', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
-  { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
-  { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
-  { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
-  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
-  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
-  { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#4ade80' },
-  { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
-  { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
+  { id: 'consulta_nova', label: 'Consulta nova', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#EFF6FF' },
+  { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#EFF6FF' },
+  { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#EFF6FF' },
+  { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#EFF6FF' },
+  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
+  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
+  { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#F0FDF4' },
+  { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#FDF4FF' },
+  { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
 
 const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
@@ -899,6 +905,9 @@ function DiaDaAgenda({
     if (lista) lista.push(a);
     else porHora.set(h, [a]);
   }
+  // Hora atual, para destacar o bloco do momento (só quando é hoje).
+  const agora = horaAtualSeHoje(dia);
+
   // Dentro da hora, em ordem de chegada.
   porHora.forEach((lista) => lista.sort((x, y) => (x.hora || '').localeCompare(y.hora || '')));
 
@@ -997,14 +1006,20 @@ function DiaDaAgenda({
                 const rotulo = `${String(h).padStart(2, '0')}:00`;
 
                 if (!lista || lista.length === 0) {
+                  const vazioAgora = h === agora;
                   return (
                     <button
                       key={h}
                       onClick={() => onEscolherHorario(dia, rotulo)}
-                      className="text-left px-3 py-2.5 rounded-xl border border-dashed border-amber-300 text-amber-900 hover:bg-amber-50 hover:border-amber-500 transition-colors"
+                      className={`text-left px-3 py-2.5 rounded-xl border border-dashed transition-colors ${
+                        vazioAgora
+                          ? 'border-amber-600 border-2 bg-amber-50 text-amber-900'
+                          : 'border-amber-300 text-amber-900 hover:bg-amber-50 hover:border-amber-500'
+                      }`}
                     >
                       <p className="text-[11px] font-bold tabular-nums text-amber-800">
                         {String(h).padStart(2, '0')}h
+                        {vazioAgora && <span className="ml-1.5 text-amber-700">• AGORA</span>}
                       </p>
                       <p className="text-xs text-amber-800/60">livre</p>
                     </button>
@@ -1012,18 +1027,27 @@ function DiaDaAgenda({
                 }
 
                 const info = (a: Agendamento) => infoTipo(a.tipo);
+                const ehAgora = h === agora;
 
                 return (
-                  <div key={h} className="rounded-xl border border-amber-200 bg-white overflow-hidden">
-                    <div className="px-3 py-1.5 bg-amber-100/70 flex items-center justify-between gap-2">
-                      <p className="text-[11px] font-bold tabular-nums text-amber-900">
+                  <div
+                    key={h}
+                    className={`rounded-xl bg-white overflow-hidden ${
+                      ehAgora ? 'border-2 border-amber-600 shadow-md' : 'border border-amber-200'
+                    }`}
+                  >
+                    <div className={`px-3 py-1.5 flex items-center justify-between gap-2 ${ehAgora ? 'bg-amber-600 text-white' : 'bg-amber-100/70'}`}>
+                      <p className={`text-[11px] font-bold tabular-nums ${ehAgora ? 'text-white' : 'text-amber-900'}`}>
                         {String(h).padStart(2, '0')}h
-                        <span className="font-normal text-amber-800/60"> · {lista.length}</span>
+                        {ehAgora && <span className="ml-1.5 font-extrabold">• AGORA</span>}
+                        <span className={`font-normal ${ehAgora ? 'text-white/80' : 'text-amber-800/60'}`}> · {lista.length}</span>
                       </p>
                       <button
                         onClick={() => onEscolherHorario(dia, rotulo)}
                         title="Encaixar mais um paciente nesta hora"
-                        className="text-amber-800 hover:text-amber-950 text-sm font-bold leading-none px-1.5 rounded hover:bg-amber-200 transition-colors"
+                        className={`text-base font-bold leading-none px-2 py-0.5 rounded transition-colors ${
+                          ehAgora ? 'text-white hover:bg-amber-700' : 'text-amber-800 hover:text-amber-950 hover:bg-amber-200'
+                        }`}
                       >
                         +
                       </button>
@@ -1035,18 +1059,18 @@ function DiaDaAgenda({
                           key={ag.id}
                           onClick={() => onSelecionarAgendamento(ag)}
                           title="Ver, remarcar, desmarcar ou excluir"
-                          className="w-full text-left px-3 py-2 border-l-4 hover:brightness-95 transition-all"
+                          className="w-full text-left px-3 py-2.5 border-l-4 hover:brightness-95 transition-all"
                           style={{
                             borderLeftColor: info(ag).cor,
                             backgroundColor: info(ag).fundo,
                             color: '#1c1917',
                           }}
                         >
-                          <p className="text-xs font-bold truncate">
+                          <p className="text-[13px] font-bold truncate">
                             <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}{ag.serie_id ? '🔁 ' : ''}
                             {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
                           </p>
-                          <p className="text-[10px] font-semibold truncate opacity-80">
+                          <p className="text-[11px] font-semibold truncate" style={{ color: info(ag).cor }}>
                             {rotuloDe(ag)}
                             {ag.profissional ? ` · ${ag.profissional}` : ''}
                           </p>
@@ -1054,13 +1078,14 @@ function DiaDaAgenda({
                             <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
                           )}
 
-                          {/* O que deixar pronto antes do paciente chegar */}
-                          {etiquetasDePreferencia(ag.pacientes).length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1">
+                          {/* Preferências só na hora que está acontecendo: é quando
+                              alguém precisa preparar a água, a música, a sala. */}
+                          {ehAgora && etiquetasDePreferencia(ag.pacientes).length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1.5">
                               {etiquetasDePreferencia(ag.pacientes).map((t) => (
                                 <span
                                   key={t}
-                                  className="text-[9px] bg-white/70 font-semibold px-1.5 py-0.5 rounded-full max-w-full truncate"
+                                  className="text-[10px] bg-white border border-amber-200 text-amber-900 font-semibold px-1.5 py-0.5 rounded-full max-w-full truncate"
                                 >
                                   {t}
                                 </span>
@@ -1345,13 +1370,13 @@ function LinhaAgendamento({
           {ag.profissional ? ` · ${ag.profissional}` : ''}
         </p>
 
-        {/* O que deixar pronto antes do paciente chegar */}
-        {etiquetasDePreferencia(ag.pacientes).length > 0 && (
+        {/* O que deixar pronto antes do paciente chegar — só na lista de hoje */}
+        {!mostrarDia && etiquetasDePreferencia(ag.pacientes).length > 0 && (
           <div className="flex flex-wrap gap-1 mt-1.5">
             {etiquetasDePreferencia(ag.pacientes).map((t) => (
               <span
                 key={t}
-                className="text-[10px] bg-white/70 font-semibold px-2 py-0.5 rounded-full"
+                className="text-[10px] bg-white border border-amber-200/70 text-amber-900 font-semibold px-2 py-0.5 rounded-full"
               >
                 {t}
               </span>
