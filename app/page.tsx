@@ -10,6 +10,7 @@ import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
 import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 import Backup from './Backup';
+import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
 
 interface Product {
@@ -801,13 +802,10 @@ function Dashboard() {
     <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans p-4 md:p-8">
       <div className="max-w-6xl mx-auto space-y-6">
         
-        {/* CABEÇALHO DA CLÍNICA */}
-        <header className="bg-white border border-amber-200/80 rounded-2xl shadow-sm p-6 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-amber-500/5 rounded-full blur-3xl -z-0"></div>
-          
-          <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6">
-            
-            <div className="flex items-center space-x-5">
+        {/* CABEÇALHO — enxuto e sempre à mão: gruda no topo quando a tela rola */}
+        <header className="sticky top-0 z-40 -mx-4 md:-mx-8 px-4 md:px-8 pt-2 pb-2 bg-[#FDFBF7]/95 backdrop-blur-sm print:static print:bg-transparent">
+          <div className="bg-white border border-amber-200/80 rounded-2xl shadow-sm px-3 py-2.5 sm:px-4 sm:py-3">
+            <div className="flex items-center gap-3">
               {pilhaVistas.length > 0 && (
                 <button
                   onClick={voltar}
@@ -818,71 +816,57 @@ function Dashboard() {
                   ←
                 </button>
               )}
-              <div className="w-20 h-20 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-md overflow-hidden flex-shrink-0">
-                <img
-                  src="/logo.jpeg"
-                  alt="Dra. Bruna Oliveira"
-                  className="w-full h-full object-cover rounded-full"
-                />
+
+              <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-sm overflow-hidden flex-shrink-0">
+                <img src="/logo.jpeg" alt="Dra. Bruna Oliveira" className="w-full h-full object-cover rounded-full" />
               </div>
-              <div>
-                <h1 className="text-2xl md:text-3xl font-serif font-bold text-amber-950 tracking-tight">
+
+              <div className="min-w-0 flex-1">
+                <h1 className="font-serif font-bold text-amber-950 tracking-tight text-lg sm:text-xl leading-tight truncate">
                   Dra. Bruna Oliveira
                 </h1>
-                <p className="text-amber-800 text-xs md:text-sm font-semibold tracking-wider uppercase mt-0.5">
+                <p className="text-amber-800/80 text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase truncate">
                   Medicina do Esporte <span className="text-amber-600">•</span> CRM-MG 76958
                 </p>
-                <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-amber-900/70 mt-1.5">
-                  <span>📍 Rua Juca Stockler, 2029 - Passos/MG</span>
-                  <span>•</span>
-                  <span>📞 (35) 99987-1770</span>
-                </div>
               </div>
-            </div>
 
-            <div className="flex flex-col sm:flex-row items-center gap-3 print:hidden">
               <a
                 href="https://wa.me/5535999871770"
                 target="_blank"
                 rel="noreferrer"
-                className="w-full sm:w-auto text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-4 py-2.5 rounded-xl shadow transition-all flex items-center justify-center gap-1.5"
+                title="WhatsApp da clínica · (35) 99987-1770 · Rua Juca Stockler, 2029 - Passos/MG"
+                className="flex-shrink-0 text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-2.5 rounded-xl shadow transition-all print:hidden"
               >
-                💬 WhatsApp Clínica
+                💬<span className="hidden lg:inline"> WhatsApp</span>
               </a>
-              
-              <div className="flex space-x-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50">
+            </div>
+
+            {/* Abas: alvos grandes, lado a lado, sem quebrar em telas estreitas */}
+            <nav className="mt-2.5 grid grid-cols-4 gap-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50 print:hidden">
+              {([
+                { id: 'agenda', icone: '🔔', rotulo: 'Agenda' },
+                { id: 'pacientes', icone: '👤', rotulo: 'Pacientes' },
+                { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
+                { id: 'estoque', icone: '📦', rotulo: 'Estoque' },
+              ] as const).map((aba) => (
                 <button
-                  onClick={() => irPara({ tab: 'agenda', pacienteId: null })}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'agenda' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
+                  key={aba.id}
+                  onClick={() => irPara({ tab: aba.id, pacienteId: null })}
+                  className={`relative px-2 py-2.5 rounded-lg text-xs font-semibold transition-all ${
+                    mainTab === aba.id ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:bg-amber-200/50'
+                  }`}
                 >
-                  🔔 Agenda
-                </button>
-                <button
-                  onClick={() => irPara({ tab: 'pacientes', pacienteId: null })}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'pacientes' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
-                >
-                  👤 Pacientes
-                </button>
-                <button
-                  onClick={() => irPara({ tab: 'financeiro', pacienteId: null })}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'financeiro' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900 hover:text-amber-950'}`}
-                >
-                  💰 Financeiro
-                </button>
-                <button
-                  onClick={() => irPara({ tab: 'estoque', pacienteId: null })}
-                  className={`px-4 py-2 rounded-lg text-xs font-semibold transition-all ${mainTab === 'estoque' ? 'bg-amber-800 text-white shadow-sm relative' : 'text-amber-900 hover:text-amber-950'}`}
-                >
-                  📦 Estoque Médico
-                  {produtosEstoqueBaixo.length > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
+                  <span className="sm:hidden block text-base leading-none mb-0.5">{aba.icone}</span>
+                  <span className="hidden sm:inline">{aba.icone} </span>
+                  {aba.rotulo}
+                  {aba.id === 'estoque' && produtosEstoqueBaixo.length > 0 && (
+                    <span className="absolute top-1 right-1 bg-red-600 text-white text-[10px] w-4 h-4 rounded-full flex items-center justify-center font-bold">
                       !
                     </span>
                   )}
                 </button>
-              </div>
-            </div>
-
+              ))}
+            </nav>
           </div>
         </header>
 
@@ -890,59 +874,29 @@ function Dashboard() {
         <div className="space-y-3 print:hidden">
           {/* Lembrete de cópia de segurança: só aparece quando passa do prazo */}
           <Backup compacto />
-          {aniversariantesHoje.length > 0 && (
-            <div className="bg-amber-100 border-l-4 border-amber-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">🎂</span>
-                <div>
-                  <h4 className="font-serif font-bold text-amber-950 text-sm">Aniversariantes do Dia ({aniversariantesHoje.length})</h4>
-                  <p className="text-xs text-amber-900">
-                    {aniversariantesHoje.map(p => p.nome).join(', ')}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {aniversariantesHoje.map(p => (
-                  <a
-                    key={p.id}
-                    href={getWhatsAppLink(p.telefone, `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso!`)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-all"
-                  >
-                    🎉 Parabéns p/ {p.nome.split(' ')[0]}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+          <AlertaPacientes
+            icone="🎂"
+            titulo="Aniversariantes de hoje"
+            pessoas={aniversariantesHoje}
+            rotuloBotao="Parabenizar"
+            tom="amber"
+            linkWhatsApp={getWhatsAppLink}
+            mensagem={(p) =>
+              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso!`
+            }
+          />
 
-          {retornosAmanha.length > 0 && (
-            <div className="bg-blue-50 border-l-4 border-blue-600 p-4 rounded-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-3 shadow-sm">
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">🔔</span>
-                <div>
-                  <h4 className="font-serif font-bold text-blue-950 text-sm">Lembrete de Retorno Amanhã ({retornosAmanha.length})</h4>
-                  <p className="text-xs text-blue-900">
-                    {retornosAmanha.map(p => p.nome).join(', ')}
-                  </p>
-                </div>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {retornosAmanha.map(p => (
-                  <a
-                    key={p.id}
-                    href={getWhatsAppLink(p.telefone, `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu retorno está agendado para amanhã. Confirmado?`)}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-all"
-                  >
-                    📩 Lembrar {p.nome.split(' ')[0]}
-                  </a>
-                ))}
-              </div>
-            </div>
-          )}
+          <AlertaPacientes
+            icone="🔔"
+            titulo="Têm atendimento amanhã"
+            pessoas={retornosAmanha}
+            rotuloBotao="Ver e avisar"
+            tom="blue"
+            linkWhatsApp={getWhatsAppLink}
+            mensagem={(p) =>
+              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu atendimento está agendado para amanhã. Confirmado?`
+            }
+          />
         </div>
 
         {/* VIEW: AGENDA — lembretes de quem vem, quem falta marcar e quem sumiu */}
