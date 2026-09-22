@@ -29,6 +29,26 @@ function rotuloMes(ym: string) {
   return `${MESES[Number(m) - 1]} de ${a}`;
 }
 
+function hojeISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function somaDias(iso: string, dias: number) {
+  const d = new Date(iso + 'T12:00:00');
+  d.setDate(d.getDate() + dias);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function porExtenso(iso: string) {
+  return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 function primeiroDia(ym: string) {
   return `${ym}-01`;
 }
@@ -66,8 +86,9 @@ function baixarPlanilha(linhas: Linha[], nomeArquivo: string) {
 /* ------------------------------------------------------------------ */
 
 export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id: string) => void }) {
-  const [modo, setModo] = useState<'mes' | 'geral'>('mes');
+  const [modo, setModo] = useState<'dia' | 'mes' | 'geral'>('dia');
   const [mes, setMes] = useState(mesAtual());
+  const [dia, setDia] = useState(hojeISO());
   const [linhas, setLinhas] = useState<Linha[]>([]);
   const [carregando, setCarregando] = useState(true);
   const [busca, setBusca] = useState('');
@@ -81,10 +102,11 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
       .order('data', { ascending: false })
       .order('created_at', { ascending: false });
     if (modo === 'mes') q = q.gte('data', primeiroDia(mes)).lte('data', ultimoDia(mes));
+    if (modo === 'dia') q = q.eq('data', dia);
     const { data } = await q;
     setLinhas(((data as unknown as Linha[]) || []).map((l) => ({ ...l, valor: Number(l.valor) })));
     setCarregando(false);
-  }, [modo, mes]);
+  }, [modo, mes, dia]);
 
   useEffect(() => {
     carregar();
@@ -127,8 +149,16 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
     }, {})
   ).sort((a, b) => b.total - a.total);
 
-  const titulo = modo === 'mes' ? rotuloMes(mes) : 'Todos os pagamentos';
-  const nomeArquivo = modo === 'mes' ? `pagamentos-${mes}.csv` : 'pagamentos-geral.csv';
+  const titulo =
+    modo === 'dia'
+      ? dia === hojeISO()
+        ? 'Hoje'
+        : porExtenso(dia).replace(/^\w/, (c) => c.toUpperCase())
+      : modo === 'mes'
+        ? rotuloMes(mes)
+        : 'Todos os pagamentos';
+  const nomeArquivo =
+    modo === 'dia' ? `pagamentos-${dia}.csv` : modo === 'mes' ? `pagamentos-${mes}.csv` : 'pagamentos-geral.csv';
 
   return (
     <div className="space-y-6">
@@ -143,6 +173,12 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
           <div className="flex flex-wrap items-center gap-2">
             <div className="flex space-x-1 bg-amber-50 p-1 rounded-xl border border-amber-200/50">
               <button
+                onClick={() => setModo('dia')}
+                className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${modo === 'dia' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900'}`}
+              >
+                Do dia
+              </button>
+              <button
                 onClick={() => setModo('mes')}
                 className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${modo === 'mes' ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900'}`}
               >
@@ -155,6 +191,39 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
                 Geral
               </button>
             </div>
+
+            {modo === 'dia' && (
+              <div className="flex items-center gap-1 bg-amber-50 border border-amber-200/50 rounded-xl px-1 py-1">
+                <button
+                  onClick={() => setDia(somaDias(dia, -1))}
+                  title="Dia anterior"
+                  className="w-8 h-8 rounded-lg hover:bg-amber-100 text-amber-900 font-bold"
+                >
+                  ‹
+                </button>
+                <input
+                  type="date"
+                  value={dia}
+                  onChange={(e) => e.target.value && setDia(e.target.value)}
+                  className="bg-transparent text-xs font-semibold text-amber-950 outline-none px-1"
+                />
+                <button
+                  onClick={() => setDia(somaDias(dia, 1))}
+                  title="Próximo dia"
+                  className="w-8 h-8 rounded-lg hover:bg-amber-100 text-amber-900 font-bold"
+                >
+                  ›
+                </button>
+                {dia !== hojeISO() && (
+                  <button
+                    onClick={() => setDia(hojeISO())}
+                    className="text-[11px] font-semibold text-amber-800 hover:underline px-2"
+                  >
+                    hoje
+                  </button>
+                )}
+              </div>
+            )}
 
             {modo === 'mes' && (
               <div className="flex items-center gap-1 bg-amber-50 border border-amber-200/50 rounded-xl px-1 py-1">
@@ -228,7 +297,12 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
           <p className="text-xs text-amber-800/60 py-4">Carregando…</p>
         ) : filtradas.length === 0 ? (
           <p className="text-xs text-amber-800/70 py-4">
-            Nenhum pagamento {modo === 'mes' ? `em ${rotuloMes(mes).toLowerCase()}` : 'registrado'}.
+            Nenhum pagamento{' '}
+            {modo === 'dia'
+              ? `em ${new Date(dia + 'T12:00:00').toLocaleDateString('pt-BR')}`
+              : modo === 'mes'
+                ? `em ${rotuloMes(mes).toLowerCase()}`
+                : 'registrado'}.
             {' '}Registre pela ficha do paciente, na seção 💳 Pagamentos.
           </p>
         ) : visao === 'lancamentos' ? (

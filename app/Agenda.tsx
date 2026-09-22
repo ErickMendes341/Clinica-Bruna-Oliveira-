@@ -338,11 +338,13 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   }, []);
 
   const carregarDia = useCallback(async (d: string) => {
+    // Inclui compareceu/faltou: quem já foi marcado continua na grade,
+    // com o sinal verde ou vermelho do lado.
     const { data } = await supabase
       .from('agendamentos')
       .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida)')
       .eq('data', d)
-      .in('status', ['agendado', 'confirmado'])
+      .in('status', ['agendado', 'confirmado', 'compareceu', 'faltou'])
       .order('hora', { ascending: true });
     setAgendaDia((data as Agendamento[]) || []);
   }, []);
@@ -449,6 +451,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         setAberto={setDiaAberto}
         onEscolherHorario={abrirNovoCom}
         onSelecionarAgendamento={setAgSelecionado}
+        onStatus={mudarStatus}
       />
 
       {/* ---------------- Novo agendamento ---------------- */}
@@ -867,6 +870,7 @@ function DiaDaAgenda({
   setAberto,
   onEscolherHorario,
   onSelecionarAgendamento,
+  onStatus,
 }: {
   dia: string;
   setDia: (d: string) => void;
@@ -879,6 +883,7 @@ function DiaDaAgenda({
   setAberto: (v: boolean) => void;
   onEscolherHorario: (data: string, hora?: string) => void;
   onSelecionarAgendamento: (ag: Agendamento) => void;
+  onStatus: (id: string, status: string) => void;
 }) {
   // A clínica trabalha por hora cheia: dentro das 9h podem estar a consulta
   // nova das 9:15 e a medicação das 9:20. Por isso cada cartão é uma HORA,
@@ -1040,7 +1045,9 @@ function DiaDaAgenda({
                       <p className={`text-[11px] font-bold tabular-nums ${ehAgora ? 'text-white' : 'text-amber-900'}`}>
                         {String(h).padStart(2, '0')}h
                         {ehAgora && <span className="ml-1.5 font-extrabold">• AGORA</span>}
-                        <span className={`font-normal ${ehAgora ? 'text-white/80' : 'text-amber-800/60'}`}> · {lista.length}</span>
+                        <span className={`font-normal ${ehAgora ? 'text-white/80' : 'text-amber-800/60'}`}>
+                          {' · '}{lista.filter((a) => a.status === 'compareceu').length}/{lista.length}
+                        </span>
                       </p>
                       <button
                         onClick={() => onEscolherHorario(dia, rotulo)}
@@ -1054,46 +1061,83 @@ function DiaDaAgenda({
                     </div>
 
                     <div className="flex flex-col gap-px bg-amber-100">
-                      {lista.map((ag) => (
-                        <button
+                      {lista.map((ag) => {
+                        const veio = ag.status === 'compareceu';
+                        const faltou = ag.status === 'faltou';
+                        return (
+                        <div
                           key={ag.id}
-                          onClick={() => onSelecionarAgendamento(ag)}
-                          title="Ver, remarcar, desmarcar ou excluir"
-                          className="w-full text-left px-3 py-2.5 border-l-4 hover:brightness-95 transition-all"
+                          className="flex items-stretch border-l-4 transition-all"
                           style={{
-                            borderLeftColor: info(ag).cor,
-                            backgroundColor: info(ag).fundo,
+                            borderLeftColor: veio ? '#15803d' : faltou ? '#b91c1c' : info(ag).cor,
+                            backgroundColor: veio ? '#F0FDF4' : faltou ? '#FEF2F2' : info(ag).fundo,
                             color: '#1c1917',
                           }}
                         >
-                          <p className="text-[13px] font-bold truncate">
-                            <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}{ag.serie_id ? '🔁 ' : ''}
-                            {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
-                          </p>
-                          <p className="text-[11px] font-semibold truncate" style={{ color: info(ag).cor }}>
-                            {rotuloDe(ag)}
-                            {ag.profissional ? ` · ${ag.profissional}` : ''}
-                          </p>
-                          {ag.observacao && ag.tipo !== 'outros' && (
-                            <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
-                          )}
+                          <button
+                            onClick={() => onSelecionarAgendamento(ag)}
+                            title="Ver, remarcar, desmarcar ou excluir"
+                            className="flex-1 min-w-0 text-left px-3 py-2.5 hover:brightness-95 transition-all"
+                          >
+                            <p className={`text-[13px] font-bold truncate ${faltou ? 'line-through opacity-60' : ''}`}>
+                              <span className="tabular-nums opacity-70">{faixa(ag)}</span>{' '}{ag.serie_id ? '🔁 ' : ''}
+                              {ag.pacientes?.nome ? primeiroNome(ag.pacientes.nome) : 'Paciente'}
+                            </p>
+                            <p
+                              className="text-[11px] font-semibold truncate"
+                              style={{ color: veio ? '#15803d' : faltou ? '#b91c1c' : info(ag).cor }}
+                            >
+                              {veio ? '✅ Compareceu' : faltou ? '❌ Não compareceu' : rotuloDe(ag)}
+                              {!veio && !faltou && ag.profissional ? ` · ${ag.profissional}` : ''}
+                            </p>
+                            {ag.observacao && ag.tipo !== 'outros' && !veio && !faltou && (
+                              <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
+                            )}
 
-                          {/* Preferências só na hora que está acontecendo: é quando
-                              alguém precisa preparar a água, a música, a sala. */}
-                          {ehAgora && etiquetasDePreferencia(ag.pacientes).length > 0 && (
-                            <div className="flex flex-wrap gap-1 mt-1.5">
-                              {etiquetasDePreferencia(ag.pacientes).map((t) => (
-                                <span
-                                  key={t}
-                                  className="text-[10px] bg-white border border-amber-200 text-amber-900 font-semibold px-1.5 py-0.5 rounded-full max-w-full truncate"
-                                >
-                                  {t}
-                                </span>
-                              ))}
-                            </div>
-                          )}
-                        </button>
-                      ))}
+                            {/* Preferências só na hora que está acontecendo: é quando
+                                alguém precisa preparar a água, a música, a sala. */}
+                            {ehAgora && !veio && !faltou && etiquetasDePreferencia(ag.pacientes).length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1.5">
+                                {etiquetasDePreferencia(ag.pacientes).map((t) => (
+                                  <span
+                                    key={t}
+                                    className="text-[10px] bg-white border border-amber-200 text-amber-900 font-semibold px-1.5 py-0.5 rounded-full max-w-full truncate"
+                                  >
+                                    {t}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </button>
+
+                          {/* Presença na hora: verde veio, vermelho não veio.
+                              Clicar de novo no que já está marcado desmarca. */}
+                          <div className="flex flex-col justify-center gap-1 pr-2 py-2 flex-shrink-0">
+                            <button
+                              onClick={() => onStatus(ag.id, veio ? 'agendado' : 'compareceu')}
+                              title={veio ? 'Desmarcar presença' : 'Marcar que compareceu'}
+                              className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${
+                                veio
+                                  ? 'bg-emerald-600 text-white'
+                                  : 'bg-white/80 text-emerald-700 border border-emerald-200 hover:bg-emerald-50'
+                              }`}
+                            >
+                              ✓
+                            </button>
+                            <button
+                              onClick={() => onStatus(ag.id, faltou ? 'agendado' : 'faltou')}
+                              title={faltou ? 'Desmarcar falta' : 'Marcar que não compareceu'}
+                              className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${
+                                faltou
+                                  ? 'bg-red-700 text-white'
+                                  : 'bg-white/80 text-red-700 border border-red-200 hover:bg-red-50'
+                              }`}
+                            >
+                              ✕
+                            </button>
+                          </div>
+                        </div>
+                      );})}
                     </div>
                   </div>
                 );
@@ -1337,7 +1381,7 @@ function LinhaAgendamento({
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
-  const msgConfirmar = `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Passando para confirmar seu atendimento (${rotuloDe(ag)}) do dia ${dataCurta(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Podemos confirmar?`;
+  const msgConfirmar = `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${dataCurta(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Podemos confirmar sua presença? Responda SIM para confirmar ou avise se precisar remarcar. 😊`;
 
   return (
     <div

@@ -386,7 +386,7 @@ export default function AgendarRetorno({
   useEffect(() => setTelAtual(telefone ?? ''), [telefone]);
 
   async function avisar(ag: Ag) {
-    const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Até lá!`;
+    const msg = `Olá ${primeiroNome(pacienteNome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${porExtenso(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Podemos confirmar sua presença? Responda SIM para confirmar ou avise se precisar remarcar. 😊`;
     const tel = await avisarNoWhatsApp({ pacienteId, nome: pacienteNome ?? '', telefone: telAtual, mensagem: msg });
     if (tel && tel !== telAtual) {
       setTelAtual(tel);

@@ -885,7 +885,7 @@ function Dashboard() {
             tom="amber"
             linkWhatsApp={getWhatsAppLink}
             mensagem={(p) =>
-              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso!`
+              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso! 🎂\n\nE temos um presente: todos os aniversariantes do mês ganham uma sessão de BodyShape. Entre em contato para agendar a sua!`
             }
           />
 
