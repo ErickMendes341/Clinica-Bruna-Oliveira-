@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { PapelContexto, ROTULO_PAPEL, type Papel } from '@/lib/permissoes';
 
 /**
  * O Supabase identifica cada acesso por e-mail. Para a equipe digitar só
@@ -32,6 +33,9 @@ function paraEmail(usuario: string) {
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [carregando, setCarregando] = useState(true);
+  // Quem entrou e o que pode fazer. Enquanto não sabemos, nada aparece.
+  const [equipe, setEquipe] = useState<{ papel: Papel | null; nome: string }>({ papel: null, nome: '' });
+  const [buscandoPapel, setBuscandoPapel] = useState(false);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -47,6 +51,24 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  useEffect(() => {
+    if (!session) {
+      setEquipe({ papel: null, nome: '' });
+      return;
+    }
+    setBuscandoPapel(true);
+    supabase
+      .from('equipe_autorizada')
+      .select('nome,papel')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+      .then(({ data }) => {
+        const r = data as { nome: string; papel: Papel } | null;
+        setEquipe({ papel: r?.papel ?? null, nome: r?.nome ?? '' });
+        setBuscandoPapel(false);
+      });
+  }, [session]);
+
   if (carregando) {
     return (
       <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
@@ -57,12 +79,43 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!session) return <TelaLogin />;
 
+  if (buscandoPapel) {
+    return (
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
+        <p className="text-amber-900/60 text-sm font-semibold tracking-wide">Carregando…</p>
+      </div>
+    );
+  }
+
+  // Entrou, mas ninguém liberou esse usuário: o banco também não devolve
+  // nada, então avisamos em vez de mostrar uma tela vazia.
+  if (!equipe.papel) {
+    return (
+      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
+        <div className="bg-white border border-amber-200 rounded-2xl shadow-sm p-7 max-w-sm text-center">
+          <p className="text-3xl mb-3">🔒</p>
+          <h2 className="text-lg font-serif font-bold text-amber-950 mb-2">Acesso ainda não liberado</h2>
+          <p className="text-sm text-amber-900/80 leading-relaxed mb-5">
+            Seu login existe, mas ninguém liberou o acesso ao sistema da clínica.
+            Fale com a administração.
+          </p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <>
-      <BarraUsuario email={session.user.email ?? ''} />
+    <PapelContexto.Provider value={equipe}>
+      <BarraUsuario email={session.user.email ?? ''} nome={equipe.nome} papel={equipe.papel} />
       <TrancaPorInatividade />
       {children}
-    </>
+    </PapelContexto.Provider>
   );
 }
 
@@ -256,14 +309,15 @@ function TelaLogin() {
 /* Barra de quem está logado                                           */
 /* ------------------------------------------------------------------ */
 
-function BarraUsuario({ email }: { email: string }) {
+function BarraUsuario({ email, nome, papel }: { email: string; nome?: string; papel?: Papel }) {
   const [trocandoSenha, setTrocandoSenha] = useState(false);
 
   return (
     <>
       <div className="bg-amber-900 text-amber-50 px-4 md:px-8 py-2 flex items-center justify-between gap-3 print:hidden">
         <span className="text-[11px] font-semibold tracking-wide truncate">
-          🔒 {email.split('@')[0]}
+          🔒 {nome?.trim() || email.split('@')[0]}
+          {papel && <span className="font-normal text-amber-200/80"> · {ROTULO_PAPEL[papel]}</span>}
         </span>
         <div className="flex items-center gap-2 flex-shrink-0">
           <button

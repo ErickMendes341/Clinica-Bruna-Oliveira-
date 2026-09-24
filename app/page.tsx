@@ -10,6 +10,7 @@ import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
 import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 import Backup from './Backup';
+import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
 
@@ -100,6 +101,8 @@ const CATEGORIAS = [
 ];
 
 function Dashboard() {
+  // O que esta pessoa pode ver: o banco impõe as mesmas regras.
+  const pode = usarPode();
   const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda' | 'financeiro'>('agenda');
   const [proximoAgendamento, setProximoAgendamento] = useState<string | null>(null);
   const [pilhaVistas, setPilhaVistas] = useState<Vista[]>([]);
@@ -799,6 +802,16 @@ function Dashboard() {
     return matchNome || matchCPF;
   });
 
+  // Cada papel enxerga um conjunto de abas. Quem não pode, nem vê.
+  const abasVisiveis = (
+    [
+      { id: 'agenda', icone: '🔔', rotulo: 'Agenda', minimo: 'atendimento' },
+      { id: 'pacientes', icone: '👤', rotulo: 'Pacientes', minimo: 'atendimento' },
+      { id: 'financeiro', icone: '💰', rotulo: 'Financeiro', minimo: 'total' },
+      { id: 'estoque', icone: '📦', rotulo: 'Estoque', minimo: 'estoque' },
+    ] as const
+  ).filter((a) => pode(a.minimo));
+
   if (!mounted) return null;
 
   return (
@@ -845,13 +858,11 @@ function Dashboard() {
             </div>
 
             {/* Abas: alvos grandes, lado a lado, sem quebrar em telas estreitas */}
-            <nav className="hidden sm:grid mt-2.5 grid-cols-4 gap-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50 print:hidden">
-              {([
-                { id: 'agenda', icone: '🔔', rotulo: 'Agenda' },
-                { id: 'pacientes', icone: '👤', rotulo: 'Pacientes' },
-                { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
-                { id: 'estoque', icone: '📦', rotulo: 'Estoque' },
-              ] as const).map((aba) => (
+            <nav
+              className="hidden sm:grid mt-2.5 gap-1 bg-amber-100/60 p-1 rounded-xl border border-amber-200/50 print:hidden"
+              style={{ gridTemplateColumns: `repeat(${abasVisiveis.length}, minmax(0, 1fr))` }}
+            >
+              {abasVisiveis.map((aba) => (
                 <button
                   key={aba.id}
                   onClick={() => irPara({ tab: aba.id, pacienteId: null })}
@@ -876,7 +887,7 @@ function Dashboard() {
         {/* ALERTAS GERAIS */}
         <div className="space-y-3 print:hidden">
           {/* Lembrete de cópia de segurança: só aparece quando passa do prazo */}
-          <Backup compacto />
+          {pode('total') && <Backup compacto />}
           <AlertaPacientes
             icone="🎂"
             titulo="Aniversariantes de hoje"
@@ -904,13 +915,8 @@ function Dashboard() {
 
         {/* No celular a navegação vai para o rodapé, ao alcance do polegar */}
         <nav className="sm:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-amber-200 shadow-[0_-2px_10px_rgba(0,0,0,0.06)] print:hidden" style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}>
-          <div className="grid grid-cols-4">
-            {([
-              { id: 'agenda', icone: '🔔', rotulo: 'Agenda' },
-              { id: 'pacientes', icone: '👤', rotulo: 'Pacientes' },
-              { id: 'financeiro', icone: '💰', rotulo: 'Financeiro' },
-              { id: 'estoque', icone: '📦', rotulo: 'Estoque' },
-            ] as const).map((aba) => (
+          <div className="grid" style={{ gridTemplateColumns: `repeat(${abasVisiveis.length}, minmax(0, 1fr))` }}>
+            {abasVisiveis.map((aba) => (
               <button
                 key={aba.id}
                 onClick={() => irPara({ tab: aba.id, pacienteId: null })}
@@ -935,7 +941,7 @@ function Dashboard() {
         {mainTab === 'agenda' && <Agenda onAbrirPaciente={abrirPacientePorId} />}
 
         {/* VIEW: FINANCEIRO — pagamentos de todos os pacientes, por mês ou geral */}
-        {mainTab === 'financeiro' && <Financeiro onAbrirPaciente={abrirPacientePorId} />}
+        {mainTab === 'financeiro' && pode('total') && <Financeiro onAbrirPaciente={abrirPacientePorId} />}
 
         {/* VIEW: PACIENTES */}
         {mainTab === 'pacientes' && (
@@ -943,7 +949,7 @@ function Dashboard() {
             
             <div className="space-y-6 print:hidden">
               {/* Cópia de segurança de tudo que está no sistema */}
-              <Backup />
+              {pode('total') && <Backup />}
 
               {/* Fichas que os próprios pacientes preencheram pelo link /ficha */}
               <CadastrosRecebidos
@@ -1469,7 +1475,7 @@ function Dashboard() {
             onFechar={() => setGerenciandoPaciente(null)}
             onArquivar={handleArquivarPaciente}
             onRestaurar={handleRestaurarPaciente}
-            onExcluir={handleDeletePaciente}
+            onExcluir={pode('total') ? handleDeletePaciente : undefined}
           />
         )}
 
@@ -1483,7 +1489,7 @@ function Dashboard() {
         )}
 
         {/* VIEW: ESTOQUE */}
-        {mainTab === 'estoque' && (
+        {mainTab === 'estoque' && pode('estoque') && (
           <div className="space-y-6">
             
             {produtosEstoqueBaixo.length > 0 && (
@@ -1689,7 +1695,7 @@ function ModalGerenciarPaciente({
   onFechar: () => void;
   onArquivar: (p: Paciente) => Promise<void>;
   onRestaurar: (p: Paciente) => Promise<void>;
-  onExcluir: (p: Paciente) => Promise<void>;
+  onExcluir?: (p: Paciente) => Promise<void>;
 }) {
   const [confirmando, setConfirmando] = useState(false);
   const [salvando, setSalvando] = useState(false);
@@ -1737,7 +1743,7 @@ function ModalGerenciarPaciente({
             </button>
           )}
 
-          {confirmando ? (
+          {onExcluir && (confirmando ? (
             <div className="p-3 border border-red-300 bg-red-50 rounded-xl space-y-2">
               <p className="text-xs text-red-800 font-semibold leading-relaxed">
                 Excluir de vez some com o cadastro sem deixar registro. Não tem como desfazer.
@@ -1754,7 +1760,7 @@ function ModalGerenciarPaciente({
                   Voltar
                 </button>
                 <button
-                  onClick={() => executar(onExcluir)}
+                  onClick={() => executar(onExcluir!)}
                   disabled={salvando}
                   className="flex-1 bg-red-700 hover:bg-red-800 disabled:opacity-50 text-white text-sm font-semibold px-4 py-2 rounded-lg transition-colors"
                 >
@@ -1769,7 +1775,7 @@ function ModalGerenciarPaciente({
             >
               🗑️ Cadastro duplicado ou engano — excluir de vez
             </button>
-          )}
+          ))}
         </div>
 
         <button
