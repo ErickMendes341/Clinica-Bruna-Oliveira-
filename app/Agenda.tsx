@@ -156,16 +156,18 @@ const TIPOS = [
   { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#F0FDF4' },
+  { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#FDF4FF' },
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
 
-const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
+const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila', 'Thalita', 'Jaqueline'];
 
 const LEGENDA = [
   { nome: 'Bruna', cor: '#1d4ed8' },
   { nome: 'Nicole', cor: '#c2410c' },
   { nome: 'Ludimila', cor: '#15803d' },
+  { nome: 'Thalita', cor: '#a16207' },
   { nome: 'BodyShape', cor: '#a21caf' },
 ];
 

@@ -30,11 +30,12 @@ const TIPOS = [
   { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#4ade80' },
+  { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
 ];
 
-const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila'];
+const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila', 'Thalita', 'Jaqueline'];
 
 /* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
 function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
