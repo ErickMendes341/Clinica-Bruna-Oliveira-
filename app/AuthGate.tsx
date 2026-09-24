@@ -34,7 +34,11 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [carregando, setCarregando] = useState(true);
   // Quem entrou e o que pode fazer. Enquanto não sabemos, nada aparece.
-  const [equipe, setEquipe] = useState<{ papel: Papel | null; nome: string }>({ papel: null, nome: '' });
+  const [equipe, setEquipe] = useState<{ papel: Papel | null; nome: string; trocouSenha: boolean }>({
+    papel: null,
+    nome: '',
+    trocouSenha: true,
+  });
   const [buscandoPapel, setBuscandoPapel] = useState(false);
 
   useEffect(() => {
@@ -53,18 +57,22 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!session) {
-      setEquipe({ papel: null, nome: '' });
+      setEquipe({ papel: null, nome: '', trocouSenha: true });
       return;
     }
     setBuscandoPapel(true);
     supabase
       .from('equipe_autorizada')
-      .select('nome,papel')
+      .select('nome,papel,senha_trocada_em')
       .eq('user_id', session.user.id)
       .maybeSingle()
       .then(({ data }) => {
-        const r = data as { nome: string; papel: Papel } | null;
-        setEquipe({ papel: r?.papel ?? null, nome: r?.nome ?? '' });
+        const r = data as { nome: string; papel: Papel; senha_trocada_em: string | null } | null;
+        setEquipe({
+          papel: r?.papel ?? null,
+          nome: r?.nome ?? '',
+          trocouSenha: r?.senha_trocada_em !== null && r?.senha_trocada_em !== undefined,
+        });
         setBuscandoPapel(false);
       });
   }, [session]);
@@ -107,6 +115,17 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </div>
+    );
+  }
+
+  // Senha ainda é a provisória entregue pela administração: ninguém entra
+  // no prontuário sem antes criar uma senha só sua.
+  if (!equipe.trocouSenha) {
+    return (
+      <PrimeiroAcesso
+        nome={equipe.nome}
+        onPronto={() => setEquipe((e) => ({ ...e, trocouSenha: true }))}
+      />
     );
   }
 
@@ -366,6 +385,7 @@ function ModalTrocarSenha({ onFechar }: { onFechar: () => void }) {
 
     setEnviando(true);
     const { error } = await supabase.auth.updateUser({ password: nova });
+    if (!error) await supabase.rpc('marcar_senha_trocada');
     setEnviando(false);
 
     if (error) {
@@ -444,6 +464,128 @@ function ModalTrocarSenha({ onFechar }: { onFechar: () => void }) {
             </div>
           </form>
         )}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Primeiro acesso: criar a senha própria                              */
+/* ------------------------------------------------------------------ */
+
+function PrimeiroAcesso({ nome, onPronto }: { nome: string; onPronto: () => void }) {
+  const [nova, setNova] = useState('');
+  const [confirma, setConfirma] = useState('');
+  const [erro, setErro] = useState('');
+  const [enviando, setEnviando] = useState(false);
+
+  async function criar(e: React.FormEvent) {
+    e.preventDefault();
+    setErro('');
+
+    if (nova.length < 8) return setErro('A senha precisa ter pelo menos 8 caracteres.');
+    if (!/[a-zA-Z]/.test(nova) || !/[0-9]/.test(nova)) {
+      return setErro('Misture letras e números — assim fica bem mais difícil de adivinhar.');
+    }
+    if (nova !== confirma) return setErro('As duas senhas não são iguais.');
+
+    setEnviando(true);
+    const { error } = await supabase.auth.updateUser({ password: nova });
+    if (error) {
+      setEnviando(false);
+      return setErro(
+        error.message.includes('different from the old')
+          ? 'Escolha uma senha diferente da provisória.'
+          : 'Não foi possível criar a senha. Tente de novo.'
+      );
+    }
+    const { error: erroMarca } = await supabase.rpc('marcar_senha_trocada');
+    setEnviando(false);
+    if (erroMarca) return setErro('A senha mudou, mas houve um erro ao concluir. Entre de novo.');
+    onPronto();
+  }
+
+  const primeiroNome = nome.trim().split(' ')[0];
+
+  return (
+    <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans flex items-center justify-center p-4">
+      <div className="w-full max-w-sm">
+        <div className="bg-white border border-amber-200/80 rounded-2xl shadow-sm p-7">
+          <div className="flex flex-col items-center text-center mb-6">
+            <div className="w-16 h-16 rounded-full border-2 border-amber-400/60 p-0.5 bg-amber-50 shadow-md overflow-hidden mb-3">
+              <img src="/logo.jpeg" alt="Dra. Bruna Oliveira" className="w-full h-full object-cover rounded-full" />
+            </div>
+            <h1 className="text-xl font-serif font-bold text-amber-950">
+              {primeiroNome ? `Bem-vinda, ${primeiroNome}!` : 'Bem-vinda!'}
+            </h1>
+            <p className="text-sm text-amber-900/80 leading-relaxed mt-2">
+              Esta é a sua primeira entrada. Crie uma senha só sua para continuar — a provisória
+              deixa de valer.
+            </p>
+          </div>
+
+          <form onSubmit={criar} className="space-y-4">
+            <div>
+              <label htmlFor="nova" className="block text-xs font-semibold text-amber-900 mb-1.5">
+                Nova senha
+              </label>
+              <input
+                id="nova"
+                type="password"
+                required
+                autoFocus
+                autoComplete="new-password"
+                value={nova}
+                onChange={(e) => setNova(e.target.value)}
+                className="w-full px-4 py-2.5 text-sm bg-amber-50/50 border border-amber-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white transition-all"
+              />
+              <p className="text-[11px] text-amber-900/60 mt-1">
+                Pelo menos 8 caracteres, com letras e números.
+              </p>
+            </div>
+
+            <div>
+              <label htmlFor="confirma" className="block text-xs font-semibold text-amber-900 mb-1.5">
+                Repita a nova senha
+              </label>
+              <input
+                id="confirma"
+                type="password"
+                required
+                autoComplete="new-password"
+                value={confirma}
+                onChange={(e) => setConfirma(e.target.value)}
+                className="w-full px-4 py-2.5 text-sm bg-amber-50/50 border border-amber-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white transition-all"
+              />
+            </div>
+
+            {erro && (
+              <div className="bg-red-50 border-l-4 border-red-500 px-3 py-2.5 rounded-lg">
+                <p className="text-xs text-red-800 font-semibold">{erro}</p>
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={enviando}
+              className="w-full bg-amber-800 hover:bg-amber-900 disabled:opacity-60 text-white text-sm font-semibold px-4 py-3 rounded-xl shadow transition-all"
+            >
+              {enviando ? 'Criando…' : 'Criar minha senha e entrar'}
+            </button>
+          </form>
+        </div>
+
+        <div className="text-center mt-5 space-y-2">
+          <p className="text-[11px] text-amber-900/50 leading-relaxed">
+            Guarde bem: ninguém mais tem acesso a esta senha, nem a administração.
+          </p>
+          <button
+            onClick={() => supabase.auth.signOut()}
+            className="text-[11px] font-semibold text-amber-800 hover:underline"
+          >
+            Sair
+          </button>
+        </div>
       </div>
     </div>
   );

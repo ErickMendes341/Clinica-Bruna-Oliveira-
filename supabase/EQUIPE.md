@@ -32,6 +32,10 @@ no financeiro.
      confirmação por e-mail.
 4. **Create user**.
 
+> A pessoa entra com essa senha provisória e o app **obriga** a criar uma
+> senha só dela antes de mostrar qualquer coisa. Depois disso, nem você
+> nem ninguém mais sabe a senha dela.
+
 ## Liberar o acesso e definir o papel
 
 Criar o login não basta: enquanto a pessoa não estiver na tabela
@@ -84,3 +88,17 @@ select u.email, e.nome, e.papel, e.criado_em
 O login compartilhado antigo (`clinicabrunaoliveira`) deve ser removido da
 `equipe_autorizada`, senão continua valendo com acesso total. Faça isso
 **só depois** de confirmar que cada pessoa entrou com o login dela.
+
+## Pedir que alguém troque a senha de novo
+
+Se uma senha vazou ou a pessoa esqueceu, redefina no painel
+(**Authentication → Users → … → Reset password**) e rode:
+
+```sql
+update equipe_autorizada e
+   set senha_trocada_em = null
+  from auth.users u
+ where u.id = e.user_id and u.email = 'nicole@clinicabrunaoliveira.com.br';
+```
+
+Na próxima entrada, o app pede uma senha nova antes de liberar o acesso.
