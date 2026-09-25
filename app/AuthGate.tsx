@@ -11,14 +11,21 @@ import { PapelContexto, ROTULO_PAPEL, type Papel } from '@/lib/permissoes';
  */
 const DOMINIO_PADRAO = '@clinicabrunaoliveira.com.br';
 
-/* O login é compartilhado e os computadores ficam na recepção: depois de
+/* Os computadores ficam na recepção, à vista de quem passa: depois de
    um tempo parado, o app se tranca sozinho. Avisa 1 minuto antes, para
    ninguém perder o que está fazendo. */
 const MINUTOS_ATE_SAIR = 30;
 const SEGUNDOS_DE_AVISO = 60;
 
 function paraEmail(usuario: string) {
-  const limpo = usuario.trim().toLowerCase();
+  // "Recepção", "recepcao" e "Recepcao" são o mesmo login: tiramos acento,
+  // maiúscula e espaço para ninguém tropeçar na hora de entrar.
+  const limpo = usuario
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, '');
   return limpo.includes('@') ? limpo : limpo + DOMINIO_PADRAO;
 }
 

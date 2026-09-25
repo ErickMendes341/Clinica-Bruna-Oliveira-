@@ -8,9 +8,22 @@ app — e o banco impõe a mesma regra, então esconder na tela não é a
 |---|---|---|
 | Dra. Bruna | `total` | tudo: agenda, pacientes, estoque, financeiro, cópia de segurança, excluir |
 | Jaqueline | `total` | tudo |
-| Nicole | `estoque` | agenda, pacientes, aplicar item na ficha **e** administrar o Estoque |
+| Recepção | `estoque` | agenda, pacientes, aplicar item na ficha **e** administrar o Estoque |
 | Thalita | `atendimento` | agenda, pacientes e aplicar item na ficha |
 | Ludimila | `atendimento` | agenda, pacientes e aplicar item na ficha |
+
+**Recepção é um login de posto, não de pessoa.** Quem está na recepção no
+dia usa ele — a titular, ou quem estiver cobrindo férias. Por isso a senha
+é definida pela administração e não muda sozinha no primeiro acesso.
+
+Isso tem um custo que vale saber: tudo que sai desse login fica registrado
+como "Recepção", sem dizer qual pessoa fez. Para agenda e cadastro não
+atrapalha; se um dia precisar saber quem deu baixa em qual medicação, aí
+vale criar login por pessoa.
+
+Atenção: "Nicole" continua existindo na **agenda**, como profissional que
+faz medicação e intradermoterapia capilar. Isso é outra coisa, não tem
+relação com login nenhum e não muda quando alguém cobre férias.
 
 Quem é `atendimento` não vê a aba Estoque nem a Financeiro. Consegue dar
 baixa de material pela ficha do paciente (botão "Prescrever / Aplicar
@@ -23,9 +36,10 @@ no financeiro.
 2. Menu da esquerda: **Authentication** → **Users** → botão **Add user** →
    **Create new user**.
 3. Preencha:
-   - **Email**: `nome@clinicabrunaoliveira.com.br` (ex.: `nicole@clinicabrunaoliveira.com.br`)
+   - **Email**: `nome@clinicabrunaoliveira.com.br` (ex.: `recepcao@clinicabrunaoliveira.com.br`)
      — não precisa ser um e-mail que existe de verdade; é só o identificador.
-     No app, a pessoa digita só `nicole` que o resto é completado sozinho.
+     No app, a pessoa digita só `recepcao` que o resto é completado sozinho —
+     acento e maiúscula não atrapalham, "Recepção" também entra.
    - **Password**: uma senha provisória (a pessoa troca depois no botão
      "Alterar senha" dentro do app).
    - Marque **Auto Confirm User**, senão o login fica bloqueado esperando
@@ -53,6 +67,29 @@ on conflict (user_id) do update set nome = excluded.nome, papel = excluded.papel
 ```
 
 Papéis possíveis: `atendimento`, `estoque`, `total`.
+
+## Login de posto (recepção), que não pede senha nova
+
+Um login de pessoa obriga a criar senha própria no primeiro acesso — o que
+é certo, porque ninguém mais deve saber a senha dela. Um login de posto é
+o contrário: a senha é da administração, para poder passar de mão.
+
+Depois de criar o login no painel, rode:
+
+```sql
+insert into equipe_autorizada (user_id, nome, papel, senha_trocada_em)
+select id, 'Recepção', 'estoque', now()
+  from auth.users
+ where email = 'recepcao@clinicabrunaoliveira.com.br'
+on conflict (user_id) do update
+   set nome = excluded.nome,
+       papel = excluded.papel,
+       senha_trocada_em = now();
+```
+
+O `senha_trocada_em = now()` é o que dispensa a tela de trocar senha.
+Para mudar a senha depois (fim das férias, por exemplo), use
+**Authentication → Users → … → Reset password** no painel.
 
 ## Mudar o papel de alguém
 
