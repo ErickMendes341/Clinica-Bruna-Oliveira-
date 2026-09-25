@@ -1470,7 +1470,7 @@ function LinhaPaciente({
   tom?: 'alerta';
   onMudou?: () => void;
 }) {
-  const msgChamar = `Olá ${primeiroNome(p.nome)}, aqui é da clínica Dra. Bruna Oliveira. Sentimos sua falta! Vamos agendar seu retorno?`;
+  const msgChamar = `Olá ${primeiroNome(p.nome)}, aqui é da Clínica Dra. Bruna Oliveira. Sentimos sua falta! Dra. Bruna gostaria de acompanhar sua evolução, vamos agendar uma consulta?`;
 
   return (
     <div className="px-6 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/40 transition-colors">
