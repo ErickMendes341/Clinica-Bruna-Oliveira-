@@ -32,6 +32,7 @@ interface Agendamento {
   status: string;
   observacao?: string;
   profissional?: string | null;
+  medicacao?: string | null;
   pacientes?: {
     nome: string;
     telefone?: string;
@@ -709,6 +710,11 @@ function DetalheAgendamento({
               <span className="text-xs text-amber-800/70">· com {ag.profissional}</span>
             )}
           </div>
+          {ag.medicacao && (
+            <p className="text-sm text-amber-950 font-semibold mt-2 bg-white border-2 border-amber-300 rounded-lg px-3 py-2">
+              💊 {ag.medicacao}
+            </p>
+          )}
           {ag.observacao && ag.tipo !== 'outros' && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {ag.observacao}
@@ -1092,6 +1098,9 @@ function DiaDaAgenda({
                               {veio ? '✅ Compareceu' : faltou ? '❌ Não compareceu' : rotuloDe(ag)}
                               {!veio && !faltou && ag.profissional ? ` · ${ag.profissional}` : ''}
                             </p>
+                            {ag.medicacao && !veio && !faltou && (
+                              <p className="text-[10px] truncate font-semibold">💊 {ag.medicacao}</p>
+                            )}
                             {ag.observacao && ag.tipo !== 'outros' && !veio && !faltou && (
                               <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
                             )}
@@ -1522,6 +1531,21 @@ function FormNovoAgendamento({
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [obs, setObs] = useState('');
+  const [medicacao, setMedicacao] = useState('');
+  // Sugestões vêm do estoque: quem digita não precisa lembrar o nome exato.
+  const [produtos, setProdutos] = useState<string[]>([]);
+
+  useEffect(() => {
+    supabase
+      .from('produtos')
+      .select('nome')
+      .is('arquivado_em', null)
+      .order('nome')
+      .then(({ data }) => {
+        const nomes = (data as { nome: string }[] | null) ?? [];
+        setProdutos(nomes.map((p) => p.nome));
+      });
+  }, []);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
@@ -1563,6 +1587,7 @@ function FormNovoAgendamento({
     setPacienteId('');
     setBusca('');
     setObs('');
+    setMedicacao('');
     setHora('');
     setHoraFim('');
     setRepetirDias(0);
@@ -1652,6 +1677,7 @@ function FormNovoAgendamento({
         tipo,
         profissional: profissional || null,
         observacao: obs || null,
+        medicacao: medicacao.trim() || null,
         serie_id: serie,
         criado_por: sessao.user?.id ?? null,
       }))
@@ -1890,6 +1916,26 @@ function FormNovoAgendamento({
             ))}
           </select>
         </div>
+      </div>
+
+      <div>
+        <label className="block text-xs font-semibold text-amber-900 mb-1">
+          Medicação (opcional) — o que separar para este atendimento
+        </label>
+        <input
+          type="text"
+          list="produtos-do-estoque-agenda"
+          value={medicacao}
+          onChange={(e) => setMedicacao(e.target.value)}
+          maxLength={200}
+          placeholder="Ex: Tirzepatida 1,25mg"
+          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:border-amber-500"
+        />
+        <datalist id="produtos-do-estoque-agenda">
+          {produtos.map((n) => (
+            <option key={n} value={n} />
+          ))}
+        </datalist>
       </div>
 
       <div>
