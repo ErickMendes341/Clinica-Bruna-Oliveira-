@@ -2,6 +2,11 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import ItensDoAtendimento, {
+  descreverItem,
+  type ItemAtendimento,
+  type ProdutoOpcao,
+} from './ItensDoAtendimento';
 import { avisarNoWhatsApp } from '@/lib/zap';
 import { limparNome, nomesParecidos } from '@/lib/validacao';
 
@@ -32,7 +37,7 @@ interface Agendamento {
   status: string;
   observacao?: string;
   profissional?: string | null;
-  medicacao?: string | null;
+  agendamento_itens?: { nome_produto: string; quantidade: number }[];
   pacientes?: {
     nome: string;
     telefone?: string;
@@ -325,7 +330,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         .order('dias_sem_vir', { ascending: false }),
       supabase
         .from('agendamentos')
-        .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida)')
+        .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade)')
         .gte('data', hoje)
         .lte('data', somaDias(hoje, 30))
         .in('status', ['agendado', 'confirmado'])
@@ -345,7 +350,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
     // com o sinal verde ou vermelho do lado.
     const { data } = await supabase
       .from('agendamentos')
-      .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida)')
+      .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade)')
       .eq('data', d)
       .in('status', ['agendado', 'confirmado', 'compareceu', 'faltou'])
       .order('hora', { ascending: true });
@@ -710,10 +715,17 @@ function DetalheAgendamento({
               <span className="text-xs text-amber-800/70">· com {ag.profissional}</span>
             )}
           </div>
-          {ag.medicacao && (
-            <p className="text-sm text-amber-950 font-semibold mt-2 bg-white border-2 border-amber-300 rounded-lg px-3 py-2">
-              💊 {ag.medicacao}
-            </p>
+          {ag.agendamento_itens && ag.agendamento_itens.length > 0 && (
+            <div className="mt-2 bg-white border-2 border-amber-300 rounded-lg px-3 py-2">
+              <p className="text-[11px] font-semibold text-amber-800/80 mb-1">💊 Separar</p>
+              <ul className="space-y-0.5">
+                {ag.agendamento_itens.map((i, n) => (
+                  <li key={n} className="text-sm text-amber-950 font-semibold">
+                    {descreverItem(i)}
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
           {ag.observacao && ag.tipo !== 'outros' && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -1098,8 +1110,10 @@ function DiaDaAgenda({
                               {veio ? '✅ Compareceu' : faltou ? '❌ Não compareceu' : rotuloDe(ag)}
                               {!veio && !faltou && ag.profissional ? ` · ${ag.profissional}` : ''}
                             </p>
-                            {ag.medicacao && !veio && !faltou && (
-                              <p className="text-[10px] truncate font-semibold">💊 {ag.medicacao}</p>
+                            {ag.agendamento_itens && ag.agendamento_itens.length > 0 && !veio && !faltou && (
+                              <p className="text-[10px] truncate font-semibold">
+                                💊 {ag.agendamento_itens.map(descreverItem).join(' · ')}
+                              </p>
                             )}
                             {ag.observacao && ag.tipo !== 'outros' && !veio && !faltou && (
                               <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
@@ -1531,20 +1545,17 @@ function FormNovoAgendamento({
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [obs, setObs] = useState('');
-  const [medicacao, setMedicacao] = useState('');
-  // Sugestões vêm do estoque: quem digita não precisa lembrar o nome exato.
-  const [produtos, setProdutos] = useState<string[]>([]);
+  const [itens, setItens] = useState<ItemAtendimento[]>([]);
+  // As opções saem do estoque, para os nomes baterem com o que existe lá.
+  const [produtos, setProdutos] = useState<ProdutoOpcao[]>([]);
 
   useEffect(() => {
     supabase
       .from('produtos')
-      .select('nome')
+      .select('id,nome,categoria')
       .is('arquivado_em', null)
       .order('nome')
-      .then(({ data }) => {
-        const nomes = (data as { nome: string }[] | null) ?? [];
-        setProdutos(nomes.map((p) => p.nome));
-      });
+      .then(({ data }) => setProdutos((data as ProdutoOpcao[] | null) ?? []));
   }, []);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -1587,7 +1598,7 @@ function FormNovoAgendamento({
     setPacienteId('');
     setBusca('');
     setObs('');
-    setMedicacao('');
+    setItens([]);
     setHora('');
     setHoraFim('');
     setRepetirDias(0);
@@ -1668,26 +1679,50 @@ function FormNovoAgendamento({
 
     const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
     const serie = datas.length > 1 ? crypto.randomUUID() : null;
-    const { error } = await supabase.from('agendamentos').insert(
-      datas.map((d) => ({
-        paciente_id: idParaAgendar,
-        data: d,
-        hora: hora || null,
-        hora_fim: hora && horaFim ? horaFim : null,
-        tipo,
-        profissional: profissional || null,
-        observacao: obs || null,
-        medicacao: medicacao.trim() || null,
-        serie_id: serie,
-        criado_por: sessao.user?.id ?? null,
-      }))
-    );
+    const { data: criados, error } = await supabase
+      .from('agendamentos')
+      .insert(
+        datas.map((d) => ({
+          paciente_id: idParaAgendar,
+          data: d,
+          hora: hora || null,
+          hora_fim: hora && horaFim ? horaFim : null,
+          tipo,
+          profissional: profissional || null,
+          observacao: obs || null,
+          serie_id: serie,
+          criado_por: sessao.user?.id ?? null,
+        }))
+      )
+      .select('id');
 
-    setSalvando(false);
     if (error) {
+      setSalvando(false);
       setErro(error.message);
       return;
     }
+
+    // Num pacote de sessões, cada sessão leva a mesma lista de materiais.
+    const ids = ((criados as { id: string }[] | null) ?? []).map((c) => c.id);
+    if (ids.length > 0 && itens.length > 0) {
+      const { error: erroItens } = await supabase.from('agendamento_itens').insert(
+        ids.flatMap((id) =>
+          itens.map((i) => ({
+            agendamento_id: id,
+            produto_id: i.produto_id,
+            nome_produto: i.nome_produto,
+            quantidade: i.quantidade,
+          }))
+        )
+      );
+      if (erroItens) {
+        setSalvando(false);
+        setErro(`A consulta foi marcada, mas a lista de materiais não salvou: ${erroItens.message}`);
+        return;
+      }
+    }
+
+    setSalvando(false);
 
     limparTudo();
     onPronto(data);
@@ -1918,25 +1953,7 @@ function FormNovoAgendamento({
         </div>
       </div>
 
-      <div>
-        <label className="block text-xs font-semibold text-amber-900 mb-1">
-          Medicação (opcional) — o que separar para este atendimento
-        </label>
-        <input
-          type="text"
-          list="produtos-do-estoque-agenda"
-          value={medicacao}
-          onChange={(e) => setMedicacao(e.target.value)}
-          maxLength={200}
-          placeholder="Ex: Tirzepatida 1,25mg"
-          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:border-amber-500"
-        />
-        <datalist id="produtos-do-estoque-agenda">
-          {produtos.map((n) => (
-            <option key={n} value={n} />
-          ))}
-        </datalist>
-      </div>
+      <ItensDoAtendimento itens={itens} onMudou={setItens} produtos={produtos} />
 
       <div>
         <label className="block text-xs font-semibold text-amber-900 mb-1">

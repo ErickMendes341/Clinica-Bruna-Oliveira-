@@ -3,6 +3,11 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { avisarNoWhatsApp } from '@/lib/zap';
+import ItensDoAtendimento, {
+  descreverItem,
+  type ItemAtendimento,
+  type ProdutoOpcao,
+} from './ItensDoAtendimento';
 
 interface Ag {
   id: string;
@@ -14,7 +19,7 @@ interface Ag {
   status: string;
   observacao?: string | null;
   profissional?: string | null;
-  medicacao?: string | null;
+  agendamento_itens?: { nome_produto: string; quantidade: number }[];
 }
 
 interface Config {
@@ -227,20 +232,17 @@ export default function AgendarRetorno({
   const [tipo, setTipo] = useState('retorno');
   const [profissional, setProfissional] = useState('Bruna');
   const [descricaoOutros, setDescricaoOutros] = useState('');
-  const [medicacao, setMedicacao] = useState('');
-  // Sugestões vêm do estoque: quem digita não precisa lembrar o nome exato.
-  const [produtos, setProdutos] = useState<string[]>([]);
+  const [itens, setItens] = useState<ItemAtendimento[]>([]);
+  // As opções saem do estoque, para os nomes baterem com o que existe lá.
+  const [produtos, setProdutos] = useState<ProdutoOpcao[]>([]);
 
   useEffect(() => {
     supabase
       .from('produtos')
-      .select('nome')
+      .select('id,nome,categoria')
       .is('arquivado_em', null)
       .order('nome')
-      .then(({ data }) => {
-        const nomes = (data as { nome: string }[] | null) ?? [];
-        setProdutos(nomes.map((p) => p.nome));
-      });
+      .then(({ data }) => setProdutos((data as ProdutoOpcao[] | null) ?? []));
   }, []);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
@@ -249,7 +251,7 @@ export default function AgendarRetorno({
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
       supabase
         .from('agendamentos')
-        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional,serie_id,medicacao')
+        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional,serie_id,agendamento_itens(nome_produto,quantidade)')
         .eq('paciente_id', pacienteId)
         .in('status', ['agendado', 'confirmado'])
         .gte('data', hojeISO())
@@ -275,6 +277,35 @@ export default function AgendarRetorno({
     setProfissional(infoTipo(novoTipo).profissional);
   }
 
+  /** Pendura a lista em cada agendamento. Em remarcação, troca a antiga. */
+  async function gravarItens(ids: string[], lista: ItemAtendimento[], substituir = false) {
+    if (substituir) {
+      const { error } = await supabase.from('agendamento_itens').delete().in('agendamento_id', ids);
+      if (error) return error.message;
+    }
+    if (ids.length === 0 || lista.length === 0) return null;
+    const { error } = await supabase.from('agendamento_itens').insert(
+      ids.flatMap((id) =>
+        lista.map((i) => ({
+          agendamento_id: id,
+          produto_id: i.produto_id,
+          nome_produto: i.nome_produto,
+          quantidade: i.quantidade,
+        }))
+      )
+    );
+    return error ? error.message : null;
+  }
+
+  async function carregarItens(agendamentoId: string) {
+    const { data } = await supabase
+      .from('agendamento_itens')
+      .select('produto_id,nome_produto,quantidade')
+      .eq('agendamento_id', agendamentoId)
+      .order('criado_em');
+    setItens((data as ItemAtendimento[] | null) ?? []);
+  }
+
   function limpar() {
     setData(hojeISO());
     setHora('');
@@ -284,7 +315,7 @@ export default function AgendarRetorno({
     setTipo('retorno');
     setProfissional('Bruna');
     setDescricaoOutros('');
-    setMedicacao('');
+    setItens([]);
     setErro('');
   }
 
@@ -312,24 +343,39 @@ export default function AgendarRetorno({
 
     const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
     const serie = datas.length > 1 ? crypto.randomUUID() : null;
-    const { error } = await supabase.from('agendamentos').insert(
-      datas.map((d) => ({
-        paciente_id: pacienteId,
-        data: d,
-        hora: hora || null,
-        hora_fim: hora && horaFim ? horaFim : null,
-        tipo,
-        profissional: profissional || null,
-        observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
-        medicacao: medicacao.trim() || null,
-        serie_id: serie,
-        criado_por: sessao.user?.id ?? null,
-      }))
-    );
+    const { data: criados, error } = await supabase
+      .from('agendamentos')
+      .insert(
+        datas.map((d) => ({
+          paciente_id: pacienteId,
+          data: d,
+          hora: hora || null,
+          hora_fim: hora && horaFim ? horaFim : null,
+          tipo,
+          profissional: profissional || null,
+          observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
+          serie_id: serie,
+          criado_por: sessao.user?.id ?? null,
+        }))
+      )
+      .select('id');
 
-    setSalvando(false);
     if (error) {
+      setSalvando(false);
       setErro(`Não foi possível agendar: ${error.message}`);
+      return;
+    }
+
+    // Num pacote de sessões, cada sessão leva a mesma lista de materiais.
+    const erroItens = await gravarItens(
+      ((criados as { id: string }[] | null) ?? []).map((c) => c.id),
+      itens
+    );
+    setSalvando(false);
+    if (erroItens) {
+      setErro(`A consulta foi marcada, mas a lista de materiais não salvou: ${erroItens}`);
+      await carregar();
+      onMudou?.();
       return;
     }
 
@@ -353,13 +399,21 @@ export default function AgendarRetorno({
         profissional: profissional || null,
         // Se virou "Outros", guarda a descrição; se deixou de ser, preserva a observação antiga.
         observacao: tipo === 'outros' ? descricaoOutros.trim() : ag.tipo === 'outros' ? null : ag.observacao ?? null,
-        medicacao: medicacao.trim() || null,
       })
       .eq('id', ag.id);
 
-    setSalvando(false);
     if (error) {
+      setSalvando(false);
       setErro(`Não foi possível remarcar: ${error.message}`);
+      return;
+    }
+
+    const erroItens = await gravarItens([ag.id], itens, true);
+    setSalvando(false);
+    if (erroItens) {
+      setErro(`A consulta foi remarcada, mas a lista de materiais não salvou: ${erroItens}`);
+      await carregar();
+      onMudou?.();
       return;
     }
     setRemarcandoId(null);
@@ -397,7 +451,7 @@ export default function AgendarRetorno({
     setTipo(ag.tipo);
     setProfissional(ag.profissional || infoTipo(ag.tipo).profissional);
     setDescricaoOutros(ag.tipo === 'outros' ? ag.observacao ?? '' : '');
-    setMedicacao(ag.medicacao ?? '');
+    carregarItens(ag.id);
     setErro('');
   }
 
@@ -520,25 +574,7 @@ export default function AgendarRetorno({
         ))}
       </select>
 
-      <div>
-        <input
-          type="text"
-          list="produtos-do-estoque"
-          value={medicacao}
-          onChange={(e) => setMedicacao(e.target.value)}
-          maxLength={200}
-          placeholder="💊 Qual medicação vai fazer? (opcional)"
-          className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:border-amber-500"
-        />
-        <datalist id="produtos-do-estoque">
-          {produtos.map((n) => (
-            <option key={n} value={n} />
-          ))}
-        </datalist>
-        <p className="text-[11px] text-amber-800/60 mt-1">
-          Aparece na agenda do dia, para já deixar separado.
-        </p>
-      </div>
+      <ItensDoAtendimento itens={itens} onMudou={setItens} produtos={produtos} />
 
       {erro && (
         <div className="bg-red-50 border-l-4 border-red-500 px-3 py-2 rounded-lg">
@@ -595,8 +631,10 @@ export default function AgendarRetorno({
                         <span className="text-emerald-700 font-semibold"> · confirmado</span>
                       )}
                     </p>
-                    {ag.medicacao && (
-                      <p className="text-xs mt-0.5 font-semibold">💊 {ag.medicacao}</p>
+                    {ag.agendamento_itens && ag.agendamento_itens.length > 0 && (
+                      <p className="text-xs mt-0.5 font-semibold">
+                        💊 {ag.agendamento_itens.map(descreverItem).join(' · ')}
+                      </p>
                     )}
                   </div>
 
