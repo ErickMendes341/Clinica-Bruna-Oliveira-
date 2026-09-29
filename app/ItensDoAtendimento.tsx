@@ -12,6 +12,10 @@ export interface ItemAtendimento {
   produto_id: string | null;
   nome_produto: string;
   quantidade: number;
+  /** Quanto vai ser usado: "1ml", "1,25mg", "10 gotas". */
+  dose?: string | null;
+  /** Recado do uso, para quem for aplicar. */
+  observacao?: string | null;
 }
 
 const ROTULO_CATEGORIA: Record<string, string> = {
@@ -20,11 +24,16 @@ const ROTULO_CATEGORIA: Record<string, string> = {
   insumos: 'Insumos',
 };
 
-/** Vira "2 × B12" ou "1 × Soro 100ml" — do jeito que se lê em voz alta. */
-export function descreverItem(i: { nome_produto: string; quantidade: number }) {
+/** Vira "2 × B12" ou "1 × B12 (1ml)" — do jeito que se lê em voz alta. */
+export function descreverItem(i: {
+  nome_produto: string;
+  quantidade: number;
+  dose?: string | null;
+}) {
   const qtd = Number(i.quantidade);
   const numero = Number.isInteger(qtd) ? String(qtd) : String(qtd).replace('.', ',');
-  return `${numero} × ${i.nome_produto.trim()}`;
+  const dose = i.dose?.trim();
+  return `${numero} × ${i.nome_produto.trim()}${dose ? ` (${dose})` : ''}`;
 }
 
 /**
@@ -60,11 +69,11 @@ export default function ItensDoAtendimento({
     if (escolha === 'outro') {
       const nome = outroNome.trim();
       if (!nome) return;
-      onMudou([...itens, { produto_id: null, nome_produto: nome, quantidade: qtd }]);
+      onMudou([...itens, { produto_id: null, nome_produto: nome, quantidade: qtd, dose: '', observacao: '' }]);
     } else {
       const p = produtos.find((x) => x.id === escolha);
       if (!p) return;
-      onMudou([...itens, { produto_id: p.id, nome_produto: p.nome.trim(), quantidade: qtd }]);
+      onMudou([...itens, { produto_id: p.id, nome_produto: p.nome.trim(), quantidade: qtd, dose: '', observacao: '' }]);
     }
 
     setEscolha('');
@@ -74,6 +83,10 @@ export default function ItensDoAtendimento({
 
   function remover(indice: number) {
     onMudou(itens.filter((_, i) => i !== indice));
+  }
+
+  function alterar(indice: number, campo: 'dose' | 'observacao', valor: string) {
+    onMudou(itens.map((it, i) => (i === indice ? { ...it, [campo]: valor } : it)));
   }
 
   return (
@@ -105,28 +118,53 @@ export default function ItensDoAtendimento({
               Nada na lista ainda. Escolha abaixo o que vai ser usado.
             </p>
           ) : (
-            <ul className="space-y-1">
+            <ul className="space-y-1.5">
               {itens.map((item, i) => (
                 <li
                   key={`${item.nome_produto}-${i}`}
-                  className="flex items-center justify-between gap-2 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5"
+                  className="bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-2 space-y-1.5"
                 >
-                  <span className="text-xs text-amber-950 font-semibold min-w-0 truncate">
-                    {descreverItem(item)}
-                    {!item.produto_id && (
-                      <span className="ml-1 text-[10px] font-normal text-amber-700/70">
-                        (fora do estoque)
-                      </span>
-                    )}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => remover(i)}
-                    title="Tirar da lista"
-                    className="text-[11px] text-red-700 hover:text-red-900 font-bold px-1.5 flex-shrink-0"
-                  >
-                    ✕
-                  </button>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs text-amber-950 font-semibold min-w-0 truncate">
+                      {Number.isInteger(Number(item.quantidade))
+                        ? Number(item.quantidade)
+                        : String(item.quantidade).replace('.', ',')}{' '}
+                      × {item.nome_produto.trim()}
+                      {!item.produto_id && (
+                        <span className="ml-1 text-[10px] font-normal text-amber-700/70">
+                          (fora do estoque)
+                        </span>
+                      )}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => remover(i)}
+                      title="Tirar da lista"
+                      className="text-[11px] text-red-700 hover:text-red-900 font-bold px-1.5 flex-shrink-0"
+                    >
+                      ✕
+                    </button>
+                  </div>
+
+                  <div className="flex gap-1.5">
+                    <input
+                      type="text"
+                      value={item.dose ?? ''}
+                      onChange={(e) => alterar(i, 'dose', e.target.value)}
+                      maxLength={60}
+                      placeholder="Dose (ex: 1ml)"
+                      title="Quanto vai ser usado"
+                      className="w-24 flex-shrink-0 px-2 py-1.5 border border-amber-200 rounded-md text-[11px] bg-white outline-none focus:border-amber-500"
+                    />
+                    <input
+                      type="text"
+                      value={item.observacao ?? ''}
+                      onChange={(e) => alterar(i, 'observacao', e.target.value)}
+                      maxLength={300}
+                      placeholder="Observação do uso (opcional)"
+                      className="flex-1 min-w-0 px-2 py-1.5 border border-amber-200 rounded-md text-[11px] bg-white outline-none focus:border-amber-500"
+                    />
+                  </div>
                 </li>
               ))}
             </ul>

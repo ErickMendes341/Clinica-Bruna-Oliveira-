@@ -37,7 +37,7 @@ interface Agendamento {
   status: string;
   observacao?: string;
   profissional?: string | null;
-  agendamento_itens?: { nome_produto: string; quantidade: number }[];
+  agendamento_itens?: { nome_produto: string; quantidade: number; dose?: string | null; observacao?: string | null }[];
   pacientes?: {
     nome: string;
     telefone?: string;
@@ -330,7 +330,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
         .order('dias_sem_vir', { ascending: false }),
       supabase
         .from('agendamentos')
-        .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade)')
+        .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade,dose,observacao)')
         .gte('data', hoje)
         .lte('data', somaDias(hoje, 30))
         .in('status', ['agendado', 'confirmado'])
@@ -350,7 +350,7 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
     // com o sinal verde ou vermelho do lado.
     const { data } = await supabase
       .from('agendamentos')
-      .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade)')
+      .select('*, pacientes(nome, telefone, pref_contato, pref_musica, pref_bebida, pref_comida), agendamento_itens(nome_produto,quantidade,dose,observacao)')
       .eq('data', d)
       .in('status', ['agendado', 'confirmado', 'compareceu', 'faltou'])
       .order('hora', { ascending: true });
@@ -720,8 +720,11 @@ function DetalheAgendamento({
               <p className="text-[11px] font-semibold text-amber-800/80 mb-1">💊 Separar</p>
               <ul className="space-y-0.5">
                 {ag.agendamento_itens.map((i, n) => (
-                  <li key={n} className="text-sm text-amber-950 font-semibold">
-                    {descreverItem(i)}
+                  <li key={n}>
+                    <span className="text-sm text-amber-950 font-semibold">{descreverItem(i)}</span>
+                    {i.observacao && (
+                      <span className="block text-[11px] text-amber-800/80">↳ {i.observacao}</span>
+                    )}
                   </li>
                 ))}
               </ul>
@@ -1712,6 +1715,8 @@ function FormNovoAgendamento({
             produto_id: i.produto_id,
             nome_produto: i.nome_produto,
             quantidade: i.quantidade,
+            dose: i.dose?.trim() || null,
+            observacao: i.observacao?.trim() || null,
           }))
         )
       );

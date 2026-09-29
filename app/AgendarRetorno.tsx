@@ -19,7 +19,7 @@ interface Ag {
   status: string;
   observacao?: string | null;
   profissional?: string | null;
-  agendamento_itens?: { nome_produto: string; quantidade: number }[];
+  agendamento_itens?: { nome_produto: string; quantidade: number; dose?: string | null; observacao?: string | null }[];
 }
 
 interface Config {
@@ -251,7 +251,7 @@ export default function AgendarRetorno({
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
       supabase
         .from('agendamentos')
-        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional,serie_id,agendamento_itens(nome_produto,quantidade)')
+        .select('id,data,hora,hora_fim,tipo,status,observacao,profissional,serie_id,agendamento_itens(nome_produto,quantidade,dose,observacao)')
         .eq('paciente_id', pacienteId)
         .in('status', ['agendado', 'confirmado'])
         .gte('data', hojeISO())
@@ -291,6 +291,8 @@ export default function AgendarRetorno({
           produto_id: i.produto_id,
           nome_produto: i.nome_produto,
           quantidade: i.quantidade,
+          dose: i.dose?.trim() || null,
+          observacao: i.observacao?.trim() || null,
         }))
       )
     );
@@ -300,7 +302,7 @@ export default function AgendarRetorno({
   async function carregarItens(agendamentoId: string) {
     const { data } = await supabase
       .from('agendamento_itens')
-      .select('produto_id,nome_produto,quantidade')
+      .select('produto_id,nome_produto,quantidade,dose,observacao')
       .eq('agendamento_id', agendamentoId)
       .order('criado_em');
     setItens((data as ItemAtendimento[] | null) ?? []);
