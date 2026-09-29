@@ -23,6 +23,18 @@ interface ItemPlanejado {
   observacao?: string | null;
 }
 
+/** "hoje", "amanhã", "daqui a 7 dias", "há 2 dias" — para não lançar a lista errada. */
+function quandoE(iso: string) {
+  const d = new Date();
+  const hoje = new Date(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T12:00:00`);
+  const dias = Math.round((new Date(iso + 'T12:00:00').getTime() - hoje.getTime()) / 86400000);
+  if (dias === 0) return { texto: 'hoje', futuro: false };
+  if (dias === 1) return { texto: 'amanhã', futuro: true };
+  if (dias === -1) return { texto: 'ontem', futuro: false };
+  if (dias > 1) return { texto: `daqui a ${dias} dias`, futuro: true };
+  return { texto: `há ${-dias} dias`, futuro: false };
+}
+
 /** Hoje no fuso daqui, no formato do banco. Nunca usar toISOString(). */
 function hojeLocalISO() {
   const d = new Date();
@@ -283,15 +295,16 @@ function Dashboard() {
       .from('agendamentos')
       .select('id,data,tipo,agendamento_itens(nome_produto,quantidade,dose,observacao,aplicado_em)')
       .eq('paciente_id', pacienteId)
-      .lte('data', hojeLocalISO())
+      // Cancelado e falta não usaram nada; o resto pode ser lançado, inclusive
+      // um agendamento de outro dia — quem confirma na tela é a equipe.
       .in('status', ['agendado', 'confirmado', 'compareceu'])
-      .order('data', { ascending: false })
-      .limit(10);
+      .limit(40);
 
     const linhas = (data as
       | { id: string; data: string; tipo: string; agendamento_itens?: (ItemPlanejado & { aplicado_em: string | null })[] }[]
       | null) ?? [];
 
+    const hoje = new Date(hojeLocalISO() + 'T12:00:00').getTime();
     setListasPendentes(
       linhas
         .map((a) => ({
@@ -301,6 +314,12 @@ function Dashboard() {
           itens: (a.agendamento_itens ?? []).filter((i) => !i.aplicado_em),
         }))
         .filter((a) => a.itens.length > 0)
+        // O atendimento de hoje primeiro; depois o que estiver mais perto.
+        .sort(
+          (x, y) =>
+            Math.abs(new Date(x.data + 'T12:00:00').getTime() - hoje) -
+            Math.abs(new Date(y.data + 'T12:00:00').getTime() - hoje)
+        )
         .slice(0, 3)
     );
   }
@@ -318,8 +337,13 @@ function Dashboard() {
       })
       .join('\n');
 
+    const quando = quandoE(ag.data);
     const ok = confirm(
-      `Lançar na ficha de ${selectedPaciente.nome.trim()} e dar baixa no estoque:
+      `Atendimento de ${new Date(ag.data + 'T12:00:00').toLocaleDateString('pt-BR')} (${quando.texto}).` +
+      (quando.futuro ? ' ATENÇÃO: este atendimento ainda não aconteceu.' : '') +
+      `
+
+Lançar na ficha de ${selectedPaciente.nome.trim()} e dar baixa no estoque:
 
 ${linhas}
 
@@ -1459,6 +1483,14 @@ Nada saiu do estoque.`);
                                   day: '2-digit',
                                   month: 'long',
                                 })}
+                                <span
+                                  className={`ml-1.5 font-sans normal-case ${
+                                    quandoE(ag.data).futuro ? 'text-amber-700' : 'text-emerald-700/80'
+                                  }`}
+                                >
+                                  {quandoE(ag.data).futuro ? '⚠️ ' : ''}
+                                  {quandoE(ag.data).texto}
+                                </span>
                               </p>
                               <p className="text-[11px] text-emerald-900/80 mt-0.5">
                                 {ag.itens.map(descreverItem).join(' · ')}
