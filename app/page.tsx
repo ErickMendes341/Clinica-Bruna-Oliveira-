@@ -17,6 +17,7 @@ import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
 interface ItemPlanejado {
+  id: string;
   nome_produto: string;
   quantidade: number;
   dose?: string | null;
@@ -190,6 +191,9 @@ function Dashboard() {
     { id: string; data: string; tipo: string; itens: ItemPlanejado[] }[]
   >([]);
   const [aplicandoLista, setAplicandoLista] = useState('');
+  // Atendimento aberto para conferir quantidades, e o que foi digitado.
+  const [ajustandoLista, setAjustandoLista] = useState('');
+  const [ajustes, setAjustes] = useState<Record<string, string>>({});
   const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
   const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
@@ -308,7 +312,7 @@ function Dashboard() {
   async function fetchListasPendentes(pacienteId: string) {
     const { data } = await supabase
       .from('agendamentos')
-      .select('id,data,tipo,agendamento_itens(nome_produto,quantidade,dose,observacao,aplicado_em)')
+      .select('id,data,tipo,agendamento_itens(id,nome_produto,quantidade,dose,observacao,aplicado_em)')
       .eq('paciente_id', pacienteId)
       // Cancelado e falta não usaram nada; o resto pode ser lançado, inclusive
       // um agendamento de outro dia — quem confirma na tela é a equipe.
@@ -340,15 +344,41 @@ function Dashboard() {
   }
 
   /** Dá baixa na lista inteira de um atendimento, numa transação só. */
+  /** Abre a conferência de quantidades, já preenchida com o planejado. */
+  function abrirAjusteDaLista(ag: { id: string; itens: ItemPlanejado[] }) {
+    const iniciais: Record<string, string> = {};
+    for (const i of ag.itens) {
+      const q = Number(i.quantidade);
+      iniciais[i.id] = Number.isInteger(q) ? String(q) : String(q).replace('.', ',');
+    }
+    setAjustes(iniciais);
+    setAjustandoLista(ag.id);
+  }
+
+  /** Lança a lista com as quantidades conferidas. Zero = não usou. */
   async function handleUsarListaDoAtendimento(ag: { id: string; data: string; itens: ItemPlanejado[] }) {
     if (!selectedPaciente) return;
 
-    const linhas = ag.itens
-      .map((i) => {
-        const sai = Math.ceil(Number(i.quantidade));
-        const planejado = Number(i.quantidade);
-        const aviso = sai !== planejado ? ` (planejado ${String(planejado).replace('.', ',')})` : '';
-        return `• ${sai} × ${i.nome_produto}${i.dose ? ` — ${i.dose}` : ''}${aviso}`;
+    const ajustados = ag.itens.map((i) => {
+      const bruto = (ajustes[i.id] ?? '').replace(',', '.').trim();
+      const n = Number(bruto);
+      return { item: i, valor: bruto === '' ? NaN : n };
+    });
+
+    const invalido = ajustados.find((a) => !Number.isFinite(a.valor) || a.valor < 0);
+    if (invalido) {
+      alert(`Quantidade inválida em "${invalido.item.nome_produto}". Use 0 para o que não foi usado.`);
+      return;
+    }
+
+    const usados = ajustados.filter((a) => a.valor > 0);
+    const naoUsados = ajustados.filter((a) => a.valor === 0);
+
+    const linhas = usados
+      .map((a) => {
+        const sai = Math.ceil(a.valor);
+        const aviso = sai !== a.valor ? ` (conferido ${String(a.valor).replace('.', ',')})` : '';
+        return `• ${sai} × ${a.item.nome_produto}${a.item.dose ? ` — ${a.item.dose}` : ''}${aviso}`;
       })
       .join('\n');
 
@@ -356,31 +386,33 @@ function Dashboard() {
     const ok = confirm(
       `Atendimento de ${new Date(ag.data + 'T12:00:00').toLocaleDateString('pt-BR')} (${quando.texto}).` +
       (quando.futuro ? ' ATENÇÃO: este atendimento ainda não aconteceu.' : '') +
-      `
-
-Lançar na ficha de ${selectedPaciente.nome.trim()} e dar baixa no estoque:
-
-${linhas}
-
-Confirma?`
+      `\n\n` +
+      (usados.length === 0
+        ? 'Nenhum item foi usado. Só vou fechar a lista, sem lançar nada.'
+        : `Lançar na ficha de ${selectedPaciente.nome.trim()} e dar baixa no estoque:\n\n${linhas}`) +
+      (naoUsados.length > 0
+        ? `\n\nMarcados como NÃO usados: ${naoUsados.map((a) => a.item.nome_produto).join(', ')}`
+        : '') +
+      `\n\nConfirma?`
     );
     if (!ok) return;
 
     setAplicandoLista(ag.id);
     const { data: quantos, error } = await supabase.rpc('aplicar_itens_do_agendamento', {
       p_agendamento_id: ag.id,
+      p_itens: ajustados.map((a) => ({ id: a.item.id, quantidade: a.valor })),
     });
     setAplicandoLista('');
 
     if (error) {
-      alert(`Não foi possível lançar: ${error.message}
-
-Nada saiu do estoque.`);
+      alert(`Não foi possível lançar: ${error.message}\n\nNada saiu do estoque.`);
       fetchData();
       return;
     }
 
-    alert(`${quantos} ${quantos === 1 ? 'item lançado' : 'itens lançados'} na ficha.`);
+    setAjustandoLista('');
+    setAjustes({});
+    alert(`${quantos} ${quantos === 1 ? 'item fechado' : 'itens fechados'}.`);
     fetchData();
     fetchConsumos(selectedPaciente.id);
     fetchListasPendentes(selectedPaciente.id);
@@ -1498,8 +1530,9 @@ Nada saiu do estoque.`);
                         {listasPendentes.map((ag) => (
                           <div
                             key={ag.id}
-                            className="bg-white border border-emerald-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                            className="bg-white border border-emerald-300 rounded-lg overflow-hidden"
                           >
+                            <div className="px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                             <div className="min-w-0">
                               <p className="text-xs font-bold text-emerald-950 capitalize">
                                 {new Date(ag.data + 'T12:00:00').toLocaleDateString('pt-BR', {
@@ -1520,14 +1553,65 @@ Nada saiu do estoque.`);
                                 {ag.itens.map(descreverItem).join(' · ')}
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => handleUsarListaDoAtendimento(ag)}
-                              disabled={aplicandoLista === ag.id}
-                              className="flex-shrink-0 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors shadow-sm"
-                            >
-                              {aplicandoLista === ag.id ? 'Lançando…' : 'Usei tudo isso ✓'}
-                            </button>
+                            {ajustandoLista !== ag.id && (
+                              <button
+                                type="button"
+                                onClick={() => abrirAjusteDaLista(ag)}
+                                className="flex-shrink-0 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors shadow-sm"
+                              >
+                                Usei esses itens ✓
+                              </button>
+                            )}
+                          </div>
+
+                            {/* Conferência: quem não usou tudo corrige aqui,
+                                antes de sair do estoque. */}
+                            {ajustandoLista === ag.id && (
+                              <div className="border-t border-emerald-200 px-3 py-2.5 space-y-2 bg-emerald-50/40">
+                                <p className="text-[11px] font-semibold text-emerald-900">
+                                  Confira o que foi realmente usado — use <strong>0</strong> para o que não usou:
+                                </p>
+                                {ag.itens.map((i) => (
+                                  <div key={i.id} className="flex items-center gap-2">
+                                    <input
+                                      type="text"
+                                      inputMode="decimal"
+                                      value={ajustes[i.id] ?? ''}
+                                      onChange={(e) =>
+                                        setAjustes((a) => ({ ...a, [i.id]: e.target.value }))
+                                      }
+                                      className="w-14 flex-shrink-0 px-2 py-1.5 border border-emerald-300 rounded-md text-xs text-center bg-white outline-none focus:border-emerald-600"
+                                    />
+                                    <span className="text-xs text-emerald-950 min-w-0 truncate">
+                                      × {i.nome_produto}
+                                      {i.dose && (
+                                        <span className="text-emerald-800/70"> — {i.dose}</span>
+                                      )}
+                                    </span>
+                                  </div>
+                                ))}
+                                <div className="flex gap-2 pt-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setAjustandoLista('');
+                                      setAjustes({});
+                                    }}
+                                    className="flex-1 text-xs font-semibold px-3 py-2 rounded-lg border border-emerald-300 text-emerald-900 hover:bg-emerald-100 transition-colors"
+                                  >
+                                    Voltar
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleUsarListaDoAtendimento(ag)}
+                                    disabled={aplicandoLista === ag.id}
+                                    className="flex-1 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors shadow-sm"
+                                  >
+                                    {aplicandoLista === ag.id ? 'Lançando…' : 'Lançar na ficha'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))}
                         <p className="text-[10px] text-emerald-900/60 leading-relaxed">
