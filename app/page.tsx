@@ -23,6 +23,11 @@ interface ItemPlanejado {
   observacao?: string | null;
 }
 
+/** Só o primeiro nome: "Olá Adriana Célia Calixto" não é jeito de falar. */
+function primeiroNomeDe(nome: string) {
+  return (nome || '').trim().split(/\s+/)[0] || '';
+}
+
 /** "hoje", "amanhã", "daqui a 7 dias", "há 2 dias" — para não lançar a lista errada. */
 function quandoE(iso: string) {
   const d = new Date();
@@ -192,7 +197,9 @@ function Dashboard() {
   const [formPacienteAberto, setFormPacienteAberto] = useState(false);
 
   // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
-  const [agendadosAmanha, setAgendadosAmanha] = useState<Set<string>>(new Set());
+  // Paciente -> horários de amanhã. Quem tem duas sessões no mesmo dia
+  // precisa ver as duas no lembrete.
+  const [agendadosAmanha, setAgendadosAmanha] = useState<Map<string, string[]>>(new Map());
 
   const [mounted, setMounted] = useState(false);
 
@@ -247,11 +254,19 @@ function Dashboard() {
     const amanha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const { data, error } = await supabase
       .from('agendamentos')
-      .select('paciente_id')
+      .select('paciente_id,hora')
       .eq('data', amanha)
-      .in('status', ['agendado', 'confirmado']);
+      .in('status', ['agendado', 'confirmado'])
+      .order('hora', { ascending: true });
     if (error) return console.error('Erro ao buscar agenda de amanhã:', error);
-    setAgendadosAmanha(new Set((data ?? []).map((x) => (x as { paciente_id: string }).paciente_id)));
+
+    const porPaciente = new Map<string, string[]>();
+    for (const linha of (data ?? []) as { paciente_id: string; hora: string | null }[]) {
+      const horas = porPaciente.get(linha.paciente_id) ?? [];
+      if (linha.hora) horas.push(linha.hora.slice(0, 5));
+      porPaciente.set(linha.paciente_id, horas);
+    }
+    setAgendadosAmanha(porPaciente);
   }
 
   async function fetchProducts() {
@@ -903,7 +918,9 @@ Nada saiu do estoque.`);
   });
   const aniversariantesHoje = pacientes.filter(p => ehAniversarianteHoje(p.data_nascimento));
   // Item 9: o lembrete de amanhã vem da agenda de verdade, não do campo antigo.
-  const retornosAmanha = pacientes.filter((p) => agendadosAmanha.has(p.id));
+  const retornosAmanha = pacientes
+    .filter((p) => agendadosAmanha.has(p.id))
+    .map((p) => ({ ...p, horas: agendadosAmanha.get(p.id) ?? [] }));
 
   const arquivados = pacientes.filter((p) => p.arquivado_em);
 
@@ -1022,9 +1039,16 @@ Nada saiu do estoque.`);
             rotuloBotao="Ver e avisar"
             tom="blue"
             linkWhatsApp={getWhatsAppLink}
-            mensagem={(p) =>
-              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu atendimento está agendado para amanhã. Confirmado?`
-            }
+            mensagem={(p) => {
+              const horas = p.horas ?? [];
+              const quando =
+                horas.length === 0
+                  ? 'amanhã'
+                  : horas.length === 1
+                  ? `amanhã às ${horas[0]}`
+                  : `amanhã às ${horas.slice(0, -1).join(', ')} e ${horas[horas.length - 1]}`;
+              return `Olá ${primeiroNomeDe(p.nome)}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu atendimento está agendado para ${quando}. Confirmado?`;
+            }}
           />
         </div>
 
