@@ -13,6 +13,21 @@ import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
+import { descreverItem } from './ItensDoAtendimento';
+
+/** Item que a agenda deixou separado para um atendimento. */
+interface ItemPlanejado {
+  nome_produto: string;
+  quantidade: number;
+  dose?: string | null;
+  observacao?: string | null;
+}
+
+/** Hoje no fuso daqui, no formato do banco. Nunca usar toISOString(). */
+function hojeLocalISO() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
 
 interface Product {
   id: string;
@@ -153,6 +168,11 @@ function Dashboard() {
   const [pesagemAberta, setPesagemAberta] = useState(false);
   const [pagamentosAberto, setPagamentosAberto] = useState(false);
   const [prescreverAberto, setPrescreverAberto] = useState(false);
+  // Atendimentos deste paciente com lista montada e ainda não usada.
+  const [listasPendentes, setListasPendentes] = useState<
+    { id: string; data: string; tipo: string; itens: ItemPlanejado[] }[]
+  >([]);
+  const [aplicandoLista, setAplicandoLista] = useState('');
   const [editandoConsumo, setEditandoConsumo] = useState<ConsumoPaciente | null>(null);
   const [gerenciandoPaciente, setGerenciandoPaciente] = useState<Paciente | null>(null);
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
@@ -255,6 +275,76 @@ function Dashboard() {
       .order('created_at', { ascending: false });
     if (error) console.error('Erro ao buscar consumos:', error);
     else if (data) setConsumos(data);
+  }
+
+  /** Listas montadas na agenda que ainda não viraram baixa de estoque. */
+  async function fetchListasPendentes(pacienteId: string) {
+    const { data } = await supabase
+      .from('agendamentos')
+      .select('id,data,tipo,agendamento_itens(nome_produto,quantidade,dose,observacao,aplicado_em)')
+      .eq('paciente_id', pacienteId)
+      .lte('data', hojeLocalISO())
+      .in('status', ['agendado', 'confirmado', 'compareceu'])
+      .order('data', { ascending: false })
+      .limit(10);
+
+    const linhas = (data as
+      | { id: string; data: string; tipo: string; agendamento_itens?: (ItemPlanejado & { aplicado_em: string | null })[] }[]
+      | null) ?? [];
+
+    setListasPendentes(
+      linhas
+        .map((a) => ({
+          id: a.id,
+          data: a.data,
+          tipo: a.tipo,
+          itens: (a.agendamento_itens ?? []).filter((i) => !i.aplicado_em),
+        }))
+        .filter((a) => a.itens.length > 0)
+        .slice(0, 3)
+    );
+  }
+
+  /** Dá baixa na lista inteira de um atendimento, numa transação só. */
+  async function handleUsarListaDoAtendimento(ag: { id: string; data: string; itens: ItemPlanejado[] }) {
+    if (!selectedPaciente) return;
+
+    const linhas = ag.itens
+      .map((i) => {
+        const sai = Math.ceil(Number(i.quantidade));
+        const planejado = Number(i.quantidade);
+        const aviso = sai !== planejado ? ` (planejado ${String(planejado).replace('.', ',')})` : '';
+        return `• ${sai} × ${i.nome_produto}${i.dose ? ` — ${i.dose}` : ''}${aviso}`;
+      })
+      .join('\n');
+
+    const ok = confirm(
+      `Lançar na ficha de ${selectedPaciente.nome.trim()} e dar baixa no estoque:
+
+${linhas}
+
+Confirma?`
+    );
+    if (!ok) return;
+
+    setAplicandoLista(ag.id);
+    const { data: quantos, error } = await supabase.rpc('aplicar_itens_do_agendamento', {
+      p_agendamento_id: ag.id,
+    });
+    setAplicandoLista('');
+
+    if (error) {
+      alert(`Não foi possível lançar: ${error.message}
+
+Nada saiu do estoque.`);
+      fetchData();
+      return;
+    }
+
+    alert(`${quantos} ${quantos === 1 ? 'item lançado' : 'itens lançados'} na ficha.`);
+    fetchData();
+    fetchConsumos(selectedPaciente.id);
+    fetchListasPendentes(selectedPaciente.id);
   }
 
   // --- ESTOQUE HANDLERS ---
@@ -594,6 +684,7 @@ function Dashboard() {
       if (p) {
         setSelectedPaciente(p);
         fetchConsumos(p.id);
+        fetchListasPendentes(p.id);
         fetchProximoAgendamento(p.id);
         // Cada ficha abre enxuta; a pessoa expande só o que precisa.
         setPesagemAberta(false);
@@ -1341,9 +1432,54 @@ function Dashboard() {
                       onClick={() => setPrescreverAberto(!prescreverAberto)}
                       className={`w-full px-4 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/50 transition-colors text-left ${prescreverAberto ? 'border-b border-amber-100' : ''}`}
                     >
-                      <h3 className="font-serif font-bold text-amber-950 text-base">💉 Prescrever / Aplicar Item do Estoque</h3>
+                      <h3 className="font-serif font-bold text-amber-950 text-base">
+                        💉 Prescrever / Aplicar Item do Estoque
+                        {listasPendentes.length > 0 && (
+                          <span className="ml-2 text-xs font-sans font-bold text-emerald-700">
+                            • {listasPendentes.length === 1 ? 'lista pronta da agenda' : `${listasPendentes.length} listas prontas da agenda`}
+                          </span>
+                        )}
+                      </h3>
                       <span className="text-amber-700 text-sm flex-shrink-0">{prescreverAberto ? 'Fechar' : 'Abrir'}</span>
                     </button>
+                    {prescreverAberto && listasPendentes.length > 0 && (
+                      <div className="p-4 bg-emerald-50/60 border-b border-emerald-200 space-y-2">
+                        <p className="text-xs font-semibold text-emerald-900">
+                          ✅ Atalho: a agenda já tinha separado o que seria usado
+                        </p>
+                        {listasPendentes.map((ag) => (
+                          <div
+                            key={ag.id}
+                            className="bg-white border border-emerald-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2"
+                          >
+                            <div className="min-w-0">
+                              <p className="text-xs font-bold text-emerald-950 capitalize">
+                                {new Date(ag.data + 'T12:00:00').toLocaleDateString('pt-BR', {
+                                  weekday: 'long',
+                                  day: '2-digit',
+                                  month: 'long',
+                                })}
+                              </p>
+                              <p className="text-[11px] text-emerald-900/80 mt-0.5">
+                                {ag.itens.map(descreverItem).join(' · ')}
+                              </p>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => handleUsarListaDoAtendimento(ag)}
+                              disabled={aplicandoLista === ag.id}
+                              className="flex-shrink-0 bg-emerald-700 hover:bg-emerald-800 disabled:opacity-50 text-white text-xs font-semibold px-3 py-2 rounded-lg transition-colors shadow-sm"
+                            >
+                              {aplicandoLista === ag.id ? 'Lançando…' : 'Usei tudo isso ✓'}
+                            </button>
+                          </div>
+                        ))}
+                        <p className="text-[10px] text-emerald-900/60 leading-relaxed">
+                          Lança tudo de uma vez na ficha e dá baixa no estoque. Se preferir, use o
+                          formulário abaixo para lançar item por item.
+                        </p>
+                      </div>
+                    )}
                     {prescreverAberto && (
                     <form onSubmit={handleUsarItemNoPaciente} className="flex flex-col sm:flex-row gap-3 p-4 bg-amber-50/40">
                       <div className="flex-1">
