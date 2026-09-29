@@ -20,6 +20,7 @@ export interface ItemAtendimento {
 
 const ROTULO_CATEGORIA: Record<string, string> = {
   medicacao: 'Medicação',
+  implantes: 'Implantes',
   descartaveis: 'Descartáveis',
   insumos: 'Insumos',
 };

@@ -129,6 +129,7 @@ function diasAteValidade(validade?: string) {
 const CATEGORIAS = [
   { id: 'todos', label: 'Todos os Itens' },
   { id: 'medicacao', label: 'Medicação' },
+  { id: 'implantes', label: 'Implantes' },
   { id: 'insumos', label: 'Insumos / Suplementos' },
   { id: 'descartaveis', label: 'Descartáveis' },
 ];
@@ -1833,6 +1834,7 @@ function Dashboard() {
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Categoria</label>
                   <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none">
                     <option value="medicacao">Medicação</option>
+                    <option value="implantes">Implantes</option>
                     <option value="insumos">Insumos / Suplementos</option>
                     <option value="descartaveis">Descartáveis</option>
                   </select>
