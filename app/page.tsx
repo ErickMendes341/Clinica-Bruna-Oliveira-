@@ -312,7 +312,7 @@ function Dashboard() {
   async function fetchListasPendentes(pacienteId: string) {
     const { data } = await supabase
       .from('agendamentos')
-      .select('id,data,tipo,agendamento_itens(id,nome_produto,quantidade,dose,observacao,aplicado_em)')
+      .select('id,data,tipo,agendamento_itens(id,nome_produto,quantidade,dose,observacao,aplicado_em,cancelado_em)')
       .eq('paciente_id', pacienteId)
       // Cancelado e falta não usaram nada; o resto pode ser lançado, inclusive
       // um agendamento de outro dia — quem confirma na tela é a equipe.
@@ -320,7 +320,15 @@ function Dashboard() {
       .limit(40);
 
     const linhas = (data as
-      | { id: string; data: string; tipo: string; agendamento_itens?: (ItemPlanejado & { aplicado_em: string | null })[] }[]
+      | {
+          id: string;
+          data: string;
+          tipo: string;
+          agendamento_itens?: (ItemPlanejado & {
+            aplicado_em: string | null;
+            cancelado_em: string | null;
+          })[];
+        }[]
       | null) ?? [];
 
     const hoje = new Date(hojeLocalISO() + 'T12:00:00').getTime();
@@ -330,7 +338,7 @@ function Dashboard() {
           id: a.id,
           data: a.data,
           tipo: a.tipo,
-          itens: (a.agendamento_itens ?? []).filter((i) => !i.aplicado_em),
+          itens: (a.agendamento_itens ?? []).filter((i) => !i.aplicado_em && !i.cancelado_em),
         }))
         .filter((a) => a.itens.length > 0)
         // O atendimento de hoje primeiro; depois o que estiver mais perto.
