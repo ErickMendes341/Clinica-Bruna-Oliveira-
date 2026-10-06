@@ -12,7 +12,7 @@ import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
-import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone } from '@/lib/validacao';
+import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -605,6 +605,16 @@ function Dashboard() {
     if (telPaciente.trim() && !telefoneValido(telPaciente)) {
       return alert('Telefone inválido. Use DDD + 8 ou 9 dígitos.');
     }
+
+    // CPF é de uma pessoa só: avisa aqui e o banco recusa de qualquer jeito.
+    if (cpfPaciente.trim()) {
+      const jaTemCPF = mesmoCPF(cpfPaciente, pacientes, editingPacienteId ?? undefined);
+      if (jaTemCPF.length > 0) {
+        return alert(
+          `Este CPF já está cadastrado para:\n\n` + jaTemCPF.map((x) => '• ' + x.nome.trim()).join('\n') + `\n\nDuas pessoas não podem ter o mesmo CPF. Abra a ficha acima em vez de criar outra — ou confira se digitou certo.`
+        );
+      }
+    }
     // Cadastro novo com nome parecido: pergunta antes de criar duplicado.
     if (!editingPacienteId) {
       const iguais = nomesParecidos(nomeLimpo, pacientes.map((x) => ({ id: x.id, nome: x.nome })));
@@ -656,7 +666,13 @@ function Dashboard() {
     try {
       if (editingPacienteId) {
         const { error } = await supabase.from('pacientes').update(payload).eq('id', editingPacienteId);
-        if (error) alert(`Erro ao atualizar paciente: ${error.message}`);
+        if (error) {
+          alert(
+            error.message.includes('CPF')
+              ? error.message
+              : `Erro ao atualizar paciente: ${error.message}`
+          );
+        }
         else {
           if (selectedPaciente?.id === editingPacienteId) {
             setSelectedPaciente({ id: editingPacienteId, ...payload } as Paciente);
@@ -666,7 +682,13 @@ function Dashboard() {
         }
       } else {
         const { error } = await supabase.from('pacientes').insert([payload]);
-        if (error) alert(`Erro ao cadastrar paciente: ${error.message}`);
+        if (error) {
+          alert(
+            error.message.includes('CPF')
+              ? error.message
+              : `Erro ao cadastrar paciente: ${error.message}`
+          );
+        }
         else {
           limpaFormularioPaciente();
           fetchPacientes();

@@ -84,3 +84,21 @@ export function mesmoTelefone<T extends { id: string; nome: string; telefone?: s
   if (alvo.length < 10) return [];
   return lista.filter((p) => p.id !== ignorarId && soDigitos(p.telefone ?? '') === alvo);
 }
+
+/**
+ * Quem já está cadastrado com este CPF.
+ *
+ * Diferente do telefone, aqui não há exceção legítima: CPF é de uma pessoa
+ * só. Serve para avisar na tela antes de tentar salvar — o bloqueio de
+ * verdade é um gatilho no banco, que vale mesmo se duas pessoas
+ * cadastrarem ao mesmo tempo em computadores diferentes.
+ */
+export function mesmoCPF<T extends { id: string; nome: string; cpf?: string | null }>(
+  cpf: string,
+  lista: T[],
+  ignorarId?: string
+) {
+  const alvo = soDigitos(cpf);
+  if (alvo.length !== 11) return [];
+  return lista.filter((p) => p.id !== ignorarId && soDigitos(p.cpf ?? '') === alvo);
+}
