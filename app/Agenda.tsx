@@ -172,7 +172,8 @@ const PROFISSIONAIS = PESSOAS;
 
 const LEGENDA = [
   { nome: 'Bruna', cor: '#1d4ed8' },
-  { nome: 'Nicole', cor: '#c2410c' },
+  // Mesma cor porque é o mesmo procedimento, feito pelas três.
+  { nome: 'Nicole, Melissa e Maisa', cor: '#c2410c' },
   { nome: 'Ludimila', cor: '#15803d' },
   { nome: 'Thalita', cor: '#a16207' },
   { nome: 'BodyShape', cor: '#a21caf' },

@@ -6,6 +6,15 @@
  * relatório de aplicações por pessoa. Lista divergente daria pagamento
  * errado no fim do mês.
  *
- * Para incluir ou tirar alguém, mexa só nesta linha.
+ * Para incluir ou tirar alguém, mexa só nesta lista.
  */
-export const PESSOAS = ['Bruna', 'Nicole', 'Ludimila', 'Thalita', 'Jaqueline'] as const;
+export const PESSOAS = [
+  'Bruna',
+  // Medicação e intradermoterapia capilar: as três fazem o mesmo serviço.
+  'Nicole',
+  'Melissa',
+  'Maisa',
+  'Ludimila',
+  'Thalita',
+  'Jaqueline',
+] as const;
