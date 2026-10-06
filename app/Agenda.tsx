@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import ItensDoAtendimento, {
   descreverItem,
@@ -1571,6 +1571,12 @@ function FormNovoAgendamento({
 
   // Paciente que ainda não existe: cadastra e agenda de uma vez só.
   const [modoNovo, setModoNovo] = useState(false);
+  // Trava imediata: o estado de "salvando" só muda no próximo render, e
+  // dois cliques rápidos passariam os dois.
+  const salvandoAgora = useRef(false);
+  // Se o paciente foi criado e o agendamento falhou, a próxima tentativa
+  // aproveita o mesmo cadastro em vez de criar outro.
+  const pacienteJaCriado = useRef<{ nome: string; id: string } | null>(null);
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
 
@@ -1594,7 +1600,7 @@ function FormNovoAgendamento({
     setNovoNome(nomeSugerido);
     setPacienteId('');
     setErro('');
-    if (tipo === 'retorno') setTipo('consulta');
+    if (tipo === 'retorno') setTipo('consulta_nova');
   }
 
   function limparTudo() {
@@ -1609,10 +1615,13 @@ function FormNovoAgendamento({
     setModoNovo(false);
     setNovoNome('');
     setNovoTelefone('');
+    // Limpou o formulário: o cadastro guardado era daquela tentativa.
+    pacienteJaCriado.current = null;
   }
 
   async function salvar(e: React.FormEvent) {
     e.preventDefault();
+    if (salvandoAgora.current) return;
     setErro('');
 
     if (modoNovo && !novoNome.trim()) {
@@ -1629,6 +1638,12 @@ function FormNovoAgendamento({
     }
     if (hora && horaFim && paraMin(horaFim) <= paraMin(hora)) {
       setErro('A saída precisa ser depois da chegada.');
+      return;
+    }
+    // Rede de segurança: se um dia a lista da tela e a do banco saírem de
+    // sincronia, o aviso é em português, não um erro de banco de dados.
+    if (!TIPOS.some((t) => t.id === tipo)) {
+      setErro('Escolha o procedimento antes de agendar.');
       return;
     }
 
@@ -1650,18 +1665,24 @@ function FormNovoAgendamento({
       }
     }
 
+    salvandoAgora.current = true;
     setSalvando(true);
     const { data: sessao } = await supabase.auth.getUser();
     let idParaAgendar = pacienteId;
 
     // Cadastro mínimo: nome e telefone. O resto da ficha se completa na consulta.
-    if (modoNovo) {
+    if (modoNovo && pacienteJaCriado.current?.nome === limparNome(novoNome)) {
+      // Já criamos este paciente numa tentativa que falhou depois. Criar
+      // de novo é o que vinha enchendo a lista de repetidos.
+      idParaAgendar = pacienteJaCriado.current.id;
+    } else if (modoNovo) {
       const iguais = nomesParecidos(limparNome(novoNome), pacientes.map((x) => ({ id: x.id, nome: x.nome })));
       if (iguais.length > 0) {
         const ok = confirm(
           `Já existe paciente com nome parecido:\n\n${iguais.map((x) => '• ' + x.nome.trim()).join('\n')}\n\nCriar um cadastro novo mesmo assim?`
         );
         if (!ok) {
+          salvandoAgora.current = false;
           setSalvando(false);
           return;
         }
@@ -1673,11 +1694,13 @@ function FormNovoAgendamento({
         .single();
 
       if (erroPaciente || !criado) {
+        salvandoAgora.current = false;
         setSalvando(false);
         setErro(`Não foi possível cadastrar o paciente: ${erroPaciente?.message ?? 'erro desconhecido'}`);
         return;
       }
       idParaAgendar = (criado as { id: string }).id;
+      pacienteJaCriado.current = { nome: limparNome(novoNome), id: idParaAgendar };
     }
 
     const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
@@ -1700,6 +1723,7 @@ function FormNovoAgendamento({
       .select('id');
 
     if (error) {
+      salvandoAgora.current = false;
       setSalvando(false);
       setErro(error.message);
       return;
@@ -1721,12 +1745,16 @@ function FormNovoAgendamento({
         )
       );
       if (erroItens) {
+        salvandoAgora.current = false;
         setSalvando(false);
         setErro(`A consulta foi marcada, mas a lista de materiais não salvou: ${erroItens.message}`);
         return;
       }
     }
 
+    // Deu tudo certo: o cadastro guardado não serve para mais nada.
+    pacienteJaCriado.current = null;
+    salvandoAgora.current = false;
     setSalvando(false);
 
     limparTudo();
