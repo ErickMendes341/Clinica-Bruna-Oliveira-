@@ -13,6 +13,7 @@ import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
+import { salvarRascunho, lerRascunho, limparRascunho, quandoFoiGuardado, useAvisoDeSaida } from '@/lib/rascunho';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -200,6 +201,10 @@ function Dashboard() {
   const [mostrarArquivados, setMostrarArquivados] = useState(false);
   // O cadastro de paciente fica recolhido: a busca e a lista ganham o espaço.
   const [formPacienteAberto, setFormPacienteAberto] = useState(false);
+  // Rascunho do cadastro novo: trocar de aba não pode apagar o que a
+  // recepção já digitou. Edição de ficha existente não entra, porque lá
+  // os dados já estão salvos no banco.
+  const [rascunhoGuardado, setRascunhoGuardado] = useState('');
 
   // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
   // Paciente -> horários de amanhã. Quem tem duas sessões no mesmo dia
@@ -557,7 +562,70 @@ function Dashboard() {
   }
 
   // --- PACIENTES HANDLERS ---
+  /* ---------- Rascunho do cadastro de paciente ----------
+     Guardado neste aparelho enquanto o formulário está aberto, devolvido
+     quando a pessoa volta, apagado assim que salva.                    */
+
+  const CHAVE_RASCUNHO = 'paciente-novo';
+
+  const camposDoPaciente = {
+    nomePaciente, cpfPaciente, telPaciente, dataNascimento, peso, altura,
+    endereco, observacoes, dataRetorno, metaPeso,
+    prefContato, prefMusica, prefBebida, prefComida,
+  };
+
+  const temAlgoDigitado = Object.values(camposDoPaciente).some((v) => String(v ?? '').trim() !== '');
+  const cadastrandoNovo = formPacienteAberto && !editingPacienteId;
+
+  useAvisoDeSaida(cadastrandoNovo && temAlgoDigitado);
+
+  useEffect(() => {
+    if (!cadastrandoNovo) return;
+    if (!temAlgoDigitado) return;
+    const id = setTimeout(() => salvarRascunho(CHAVE_RASCUNHO, camposDoPaciente), 600);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cadastrandoNovo, temAlgoDigitado, JSON.stringify(camposDoPaciente)]);
+
+  /** Avisa que existe rascunho ao abrir o formulário vazio. */
+  function abrirFormularioPaciente() {
+    const abrindo = !formPacienteAberto;
+    setFormPacienteAberto(abrindo);
+    if (abrindo && !editingPacienteId && !temAlgoDigitado) {
+      setRascunhoGuardado(lerRascunho(CHAVE_RASCUNHO) ? quandoFoiGuardado(CHAVE_RASCUNHO) : '');
+    } else {
+      setRascunhoGuardado('');
+    }
+  }
+
+  function recuperarRascunho() {
+    const r = lerRascunho<typeof camposDoPaciente>(CHAVE_RASCUNHO);
+    if (!r) return setRascunhoGuardado('');
+    setNomePaciente(r.nomePaciente ?? '');
+    setCpfPaciente(r.cpfPaciente ?? '');
+    setTelPaciente(r.telPaciente ?? '');
+    setDataNascimento(r.dataNascimento ?? '');
+    setPeso(r.peso ?? '');
+    setAltura(r.altura ?? '');
+    setEndereco(r.endereco ?? '');
+    setObservacoes(r.observacoes ?? '');
+    setDataRetorno(r.dataRetorno ?? '');
+    setMetaPeso(r.metaPeso ?? '');
+    setPrefContato(r.prefContato ?? '');
+    setPrefMusica(r.prefMusica ?? '');
+    setPrefBebida(r.prefBebida ?? '');
+    setPrefComida(r.prefComida ?? '');
+    setRascunhoGuardado('');
+  }
+
+  function descartarRascunho() {
+    limparRascunho(CHAVE_RASCUNHO);
+    setRascunhoGuardado('');
+  }
+
   function limpaFormularioPaciente() {
+    limparRascunho(CHAVE_RASCUNHO);
+    setRascunhoGuardado('');
     setFormPacienteAberto(false);
     setEditingPacienteId(null);
     setNomePaciente('');
@@ -1181,7 +1249,7 @@ function Dashboard() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => setFormPacienteAberto(!formPacienteAberto)}
+                      onClick={abrirFormularioPaciente}
                       className="text-xs font-semibold px-3 py-1.5 rounded-lg border border-amber-200 text-amber-800 hover:bg-amber-50 flex-shrink-0"
                     >
                       {formPacienteAberto ? 'Fechar' : 'Cadastrar'}
@@ -1193,6 +1261,31 @@ function Dashboard() {
                   onSubmit={handleSavePaciente}
                   className={`space-y-3 px-5 pb-5 ${editingPacienteId || formPacienteAberto ? '' : 'hidden'}`}
                 >
+                  {/* Cadastro interrompido: devolve o que já tinha sido digitado. */}
+                  {rascunhoGuardado && (
+                    <div className="bg-blue-50 border border-blue-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                      <p className="text-xs text-blue-900">
+                        Você tinha um cadastro em andamento{' '}
+                        <strong className="whitespace-nowrap">({rascunhoGuardado})</strong>.
+                      </p>
+                      <div className="flex gap-1.5 flex-shrink-0">
+                        <button
+                          type="button"
+                          onClick={recuperarRascunho}
+                          className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          Recuperar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={descartarRascunho}
+                          className="text-xs border border-blue-300 text-blue-900 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                        >
+                          Descartar
+                        </button>
+                      </div>
+                    </div>
+                  )}
                   <div>
                     <label className="block text-xs font-semibold text-amber-900 mb-1">Nome Completo *</label>
                     <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="Ex: Lucas Andrade" required />
