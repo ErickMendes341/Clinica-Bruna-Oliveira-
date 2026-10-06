@@ -12,7 +12,7 @@ import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
-import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos } from '@/lib/validacao';
+import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone } from '@/lib/validacao';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -611,6 +611,17 @@ function Dashboard() {
       if (iguais.length > 0) {
         const ok = confirm(
           `Já existe paciente com nome parecido:\n\n${iguais.map((x) => '• ' + x.nome.trim()).join('\n')}\n\nCadastrar assim mesmo?`
+        );
+        if (!ok) return;
+      }
+    }
+
+    // Telefone repetido avisa, mas não trava: família divide número.
+    if (telPaciente.trim()) {
+      const mesmoNumero = mesmoTelefone(telPaciente, pacientes, editingPacienteId ?? undefined);
+      if (mesmoNumero.length > 0) {
+        const ok = confirm(
+          `Este telefone já está em outra ficha:\n\n` + mesmoNumero.map((x) => '• ' + x.nome.trim()).join('\n') + `\n\nSe for a mesma pessoa, cancele e abra a ficha dela. Se for alguém da família com o mesmo número, pode continuar.\n\nContinuar?`
         );
         if (!ok) return;
       }

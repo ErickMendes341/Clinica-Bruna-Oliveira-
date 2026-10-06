@@ -66,3 +66,21 @@ export function nomesParecidos<T extends { id: string; nome: string }>(
     return w[0] === alvo[0] && alvo.length > 1 && w.includes(alvo[alvo.length - 1]);
   });
 }
+
+/**
+ * Quem já está cadastrado com este telefone.
+ *
+ * Serve para avisar, não para bloquear: família divide número, e a clínica
+ * tem casos reais de marido e esposa, mãe e filha no mesmo celular. Quem
+ * cadastra confirma na tela se é outra pessoa mesmo.
+ */
+export function mesmoTelefone<T extends { id: string; nome: string; telefone?: string | null }>(
+  telefone: string,
+  lista: T[],
+  ignorarId?: string
+) {
+  const alvo = soDigitos(telefone);
+  // Menos de 10 dígitos não é telefone completo: não dá para comparar.
+  if (alvo.length < 10) return [];
+  return lista.filter((p) => p.id !== ignorarId && soDigitos(p.telefone ?? '') === alvo);
+}

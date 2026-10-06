@@ -8,7 +8,7 @@ import ItensDoAtendimento, {
   type ProdutoOpcao,
 } from './ItensDoAtendimento';
 import { avisarNoWhatsApp } from '@/lib/zap';
-import { limparNome, nomesParecidos } from '@/lib/validacao';
+import { limparNome, nomesParecidos, mesmoTelefone } from '@/lib/validacao';
 
 /* ------------------------------------------------------------------ */
 /* Tipos                                                               */
@@ -1677,6 +1677,20 @@ function FormNovoAgendamento({
       idParaAgendar = pacienteJaCriado.current.id;
     } else if (modoNovo) {
       const iguais = nomesParecidos(limparNome(novoNome), pacientes.map((x) => ({ id: x.id, nome: x.nome })));
+      // Telefone repetido avisa, mas não trava: família divide número.
+      if (novoTelefone.trim()) {
+        const mesmoNumero = mesmoTelefone(novoTelefone, pacientes);
+        if (mesmoNumero.length > 0) {
+          const segue = confirm(
+            `Este telefone já está em outra ficha:\n\n` + mesmoNumero.map((x) => '• ' + x.nome.trim()).join('\n') + `\n\nSe for a mesma pessoa, cancele e procure por ela acima. Se for alguém da família, pode continuar.\n\nContinuar?`
+          );
+          if (!segue) {
+            salvandoAgora.current = false;
+            setSalvando(false);
+            return;
+          }
+        }
+      }
       if (iguais.length > 0) {
         const ok = confirm(
           `Já existe paciente com nome parecido:\n\n${iguais.map((x) => '• ' + x.nome.trim()).join('\n')}\n\nCriar um cadastro novo mesmo assim?`
@@ -1696,7 +1710,12 @@ function FormNovoAgendamento({
       if (erroPaciente || !criado) {
         salvandoAgora.current = false;
         setSalvando(false);
-        setErro(`Não foi possível cadastrar o paciente: ${erroPaciente?.message ?? 'erro desconhecido'}`);
+        const msg = erroPaciente?.message ?? 'erro desconhecido';
+        setErro(
+          msg.includes('CPF já está cadastrado') || msg.includes('CPF ja esta cadastrado')
+            ? msg
+            : `Não foi possível cadastrar o paciente: ${msg}`
+        );
         return;
       }
       idParaAgendar = (criado as { id: string }).id;
