@@ -14,6 +14,8 @@ import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { salvarRascunho, lerRascunho, limparRascunho, quandoFoiGuardado, useAvisoDeSaida } from '@/lib/rascunho';
+import { PESSOAS } from '@/lib/equipe';
+import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -205,6 +207,21 @@ function Dashboard() {
   // recepção já digitou. Edição de ficha existente não entra, porque lá
   // os dados já estão salvos no banco.
   const [rascunhoGuardado, setRascunhoGuardado] = useState('');
+  // Quem está aplicando hoje. Fica lembrado no aparelho porque a mesma
+  // pessoa costuma aplicar vários seguidos — e errar isso vira pagamento
+  // errado no fim do mês.
+  const [quemAplicou, setQuemAplicou] = useState('');
+
+  useEffect(() => {
+    const salvo = lerRascunho<string>('quem-aplicou');
+    if (salvo) setQuemAplicou(salvo);
+  }, []);
+
+  function escolherQuemAplicou(nome: string) {
+    setQuemAplicou(nome);
+    if (nome) salvarRascunho('quem-aplicou', nome);
+    else limparRascunho('quem-aplicou');
+  }
 
   // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
   // Paciente -> horários de amanhã. Quem tem duas sessões no mesmo dia
@@ -372,6 +389,7 @@ function Dashboard() {
   /** Lança a lista com as quantidades conferidas. Zero = não usou. */
   async function handleUsarListaDoAtendimento(ag: { id: string; data: string; itens: ItemPlanejado[] }) {
     if (!selectedPaciente) return;
+    if (!quemAplicou) return alert('Escolha quem está aplicando antes de lançar.');
 
     const ajustados = ag.itens.map((i) => {
       const bruto = (ajustes[i.id] ?? '').replace(',', '.').trim();
@@ -415,6 +433,7 @@ function Dashboard() {
     const { data: quantos, error } = await supabase.rpc('aplicar_itens_do_agendamento', {
       p_agendamento_id: ag.id,
       p_itens: ajustados.map((a) => ({ id: a.item.id, quantidade: a.valor })),
+      p_quem: quemAplicou,
     });
     setAplicandoLista('');
 
@@ -1015,10 +1034,13 @@ function Dashboard() {
       return alert(`${prod?.nome} está VENCIDO (validade ${new Date(prod!.validade! + 'T12:00:00').toLocaleDateString('pt-BR')}). Não dá para aplicar.`);
     }
 
+    if (!quemAplicou) return alert('Escolha quem está aplicando.');
+
     const { error } = await supabase.rpc('aplicar_item', {
       p_paciente_id: selectedPaciente.id,
       p_produto_id: selectedProdutoId,
       p_qtd: qtd,
+      p_quem: quemAplicou,
     });
     if (error) {
       alert(`Não foi possível aplicar: ${error.message}`);
@@ -1222,7 +1244,13 @@ function Dashboard() {
         {mainTab === 'agenda' && <Agenda onAbrirPaciente={abrirPacientePorId} />}
 
         {/* VIEW: FINANCEIRO — pagamentos de todos os pacientes, por mês ou geral */}
-        {mainTab === 'financeiro' && pode('total') && <Financeiro onAbrirPaciente={abrirPacientePorId} />}
+        {mainTab === 'financeiro' && pode('total') && (
+          <div className="space-y-4">
+            <Financeiro onAbrirPaciente={abrirPacientePorId} />
+            {/* Fecha o pagamento de quem ganha por aplicação. */}
+            <AplicacoesPorPessoa />
+          </div>
+        )}
 
         {/* VIEW: PACIENTES */}
         {mainTab === 'pacientes' && (
@@ -1657,6 +1685,29 @@ function Dashboard() {
                       </h3>
                       <span className="text-amber-700 text-sm flex-shrink-0">{prescreverAberto ? 'Fechar' : 'Abrir'}</span>
                     </button>
+                    {prescreverAberto && (
+                      <div className="px-4 py-3 bg-amber-100/50 border-b border-amber-200 flex flex-col sm:flex-row sm:items-center gap-2">
+                        <label htmlFor="quem-aplicou" className="text-xs font-semibold text-amber-900 flex-shrink-0">
+                          Quem está aplicando?
+                        </label>
+                        <select
+                          id="quem-aplicou"
+                          value={quemAplicou}
+                          onChange={(e) => escolherQuemAplicou(e.target.value)}
+                          className={`flex-1 px-3 py-2 border rounded-lg text-sm bg-white outline-none ${
+                            quemAplicou ? 'border-amber-200' : 'border-red-400 ring-2 ring-red-100'
+                          }`}
+                        >
+                          <option value="">Escolha o nome…</option>
+                          {PESSOAS.map((n) => (
+                            <option key={n} value={n}>{n}</option>
+                          ))}
+                        </select>
+                        <p className="text-[10px] text-amber-800/70 sm:max-w-[13rem] leading-tight">
+                          Fica guardado neste aparelho e conta no relatório do mês.
+                        </p>
+                      </div>
+                    )}
                     {prescreverAberto && listasPendentes.length > 0 && (
                       <div className="p-4 bg-emerald-50/60 border-b border-emerald-200 space-y-2">
                         <p className="text-xs font-semibold text-emerald-900">

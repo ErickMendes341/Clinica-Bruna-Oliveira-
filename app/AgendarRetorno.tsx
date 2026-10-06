@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { PESSOAS } from '@/lib/equipe';
 import { avisarNoWhatsApp } from '@/lib/zap';
 import ItensDoAtendimento, {
   descreverItem,
@@ -41,7 +42,7 @@ const TIPOS = [
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
 ];
 
-const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila', 'Thalita', 'Jaqueline'];
+const PROFISSIONAIS = PESSOAS;
 
 /* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
 function rotuloDe(ag: { tipo: string; observacao?: string | null }) {

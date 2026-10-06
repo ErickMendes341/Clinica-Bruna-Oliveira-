@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { PESSOAS } from '@/lib/equipe';
 import ItensDoAtendimento, {
   descreverItem,
   type ItemAtendimento,
@@ -167,7 +168,7 @@ const TIPOS = [
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
 
-const PROFISSIONAIS = ['Bruna', 'Nicole', 'Ludimila', 'Thalita', 'Jaqueline'];
+const PROFISSIONAIS = PESSOAS;
 
 const LEGENDA = [
   { nome: 'Bruna', cor: '#1d4ed8' },
