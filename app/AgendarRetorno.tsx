@@ -34,8 +34,8 @@ const TIPOS = [
   { id: 'retorno', label: 'Retorno', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
   { id: 'implante', label: 'Implante', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
   { id: 'bioestimulador', label: 'Aplicação bioestimulador', profissional: 'Bruna', cor: '#1d4ed8', fundo: '#7dd3fc' },
-  { id: 'medicacao', label: 'Medicação', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
-  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
+  { id: 'medicacao', label: 'Medicação', profissional: '', cor: '#c2410c', fundo: '#fb923c' },
+  { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: '', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#4ade80' },
   { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
@@ -273,6 +273,8 @@ export default function AgendarRetorno({
   }, [carregar]);
 
   // O procedimento já diz quem atende; dá para trocar se alguém cobrir.
+  // Procedimentos feitos por mais de uma pessoa vêm sem nome: quem marca
+  // precisa escolher, senão a agenda do dia mostra o nome errado.
   function escolherTipo(novoTipo: string) {
     setTipo(novoTipo);
     setProfissional(infoTipo(novoTipo).profissional);
