@@ -16,6 +16,7 @@ import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome,
 import { salvarRascunho, lerRascunho, limparRascunho, quandoFoiGuardado, useAvisoDeSaida } from '@/lib/rascunho';
 import { PESSOAS } from '@/lib/equipe';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
+import ResumoTratamento from './ResumoTratamento';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -211,6 +212,8 @@ function Dashboard() {
   // pessoa costuma aplicar vários seguidos — e errar isso vira pagamento
   // errado no fim do mês.
   const [quemAplicou, setQuemAplicou] = useState('');
+  // Documento comercial para entregar ao paciente, separado do prontuário.
+  const [resumoAberto, setResumoAberto] = useState(false);
 
   useEffect(() => {
     const salvo = lerRascunho<string>('quem-aplicou');
@@ -1543,6 +1546,13 @@ function Dashboard() {
                           📲 Pedir ficha
                         </button>
                         <button
+                          onClick={() => setResumoAberto(true)}
+                          title="Sessões, medicações e total pago, para entregar ao paciente"
+                          className="text-xs bg-white border border-amber-700 text-amber-900 hover:bg-amber-50 font-semibold px-3 py-2 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+                        >
+                          📄 Resumo
+                        </button>
+                        <button
                           onClick={() => window.print()}
                           className="text-xs bg-amber-900 hover:bg-amber-950 text-white font-semibold px-4 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
                         >
@@ -1929,6 +1939,10 @@ function Dashboard() {
             </div>
 
           </div>
+        )}
+
+        {resumoAberto && selectedPaciente && (
+          <ResumoTratamento paciente={selectedPaciente} onFechar={() => setResumoAberto(false)} />
         )}
 
         {gerenciandoPaciente && (
