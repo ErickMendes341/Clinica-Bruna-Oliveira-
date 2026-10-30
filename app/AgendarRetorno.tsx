@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
+import { useRascunho } from '@/lib/rascunho';
 import { avisarNoWhatsApp } from '@/lib/zap';
 import ItensDoAtendimento, {
   descreverItem,
@@ -248,6 +249,39 @@ export default function AgendarRetorno({
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState('');
 
+  /* ---------- Rascunho da marcação, por paciente ----------
+     A chave leva o id do paciente: marcação da Maria não pode reaparecer
+     na ficha do João.                                                  */
+
+  const campos = { data, hora, horaFim, repetirDias, vezes, tipo, profissional, descricaoOutros, itens };
+
+  // Data já nasce preenchida: não conta como coisa digitada.
+  const temConteudo =
+    hora !== '' || repetirDias > 0 || tipo !== 'retorno' ||
+    descricaoOutros.trim() !== '' || itens.length > 0;
+
+  // Só vale com o formulário de marcar NOVA aberto; remarcar já tem dados.
+  const rascunho = useRascunho(
+    'consulta-ficha-' + pacienteId,
+    campos,
+    formAberto && remarcandoId === null,
+    temConteudo
+  );
+
+  function recuperarMarcacao() {
+    const r = rascunho.recuperar();
+    if (!r) return;
+    setData(r.data ?? hojeISO());
+    setHora(r.hora ?? '');
+    setHoraFim(r.horaFim ?? '');
+    setRepetirDias(r.repetirDias ?? 0);
+    setVezes(r.vezes ?? 4);
+    setTipo(r.tipo ?? 'retorno');
+    setProfissional(r.profissional ?? '');
+    setDescricaoOutros(r.descricaoOutros ?? '');
+    setItens(r.itens ?? []);
+  }
+
   const carregar = useCallback(async () => {
     const [{ data: linhas }, { data: cfg }] = await Promise.all([
       supabase
@@ -322,6 +356,7 @@ export default function AgendarRetorno({
     setDescricaoOutros('');
     setItens([]);
     setErro('');
+    rascunho.concluir();
   }
 
   // "Outros" precisa dizer o que é; o texto vai para observacao e vira o
@@ -477,6 +512,31 @@ export default function AgendarRetorno({
   /* ---------------- Campos compartilhados por agendar e remarcar ---------------- */
   const camposDeAgendamento = (
     <div className="space-y-2">
+      {/* Marcação interrompida: devolve o que já tinha sido escolhido. */}
+      {rascunho.disponivel && (
+        <div className="bg-blue-50 border border-blue-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <p className="text-xs text-blue-900">
+            Você tinha uma consulta sendo marcada{' '}
+            <strong className="whitespace-nowrap">({rascunho.disponivel})</strong>.
+          </p>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={recuperarMarcacao}
+              className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Recuperar
+            </button>
+            <button
+              type="button"
+              onClick={rascunho.descartar}
+              className="text-xs border border-blue-300 text-blue-900 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Descartar
+            </button>
+          </div>
+        </div>
+      )}
       <div className="flex flex-wrap gap-1.5">
         {[
           { rotulo: 'hoje', dias: 0 },

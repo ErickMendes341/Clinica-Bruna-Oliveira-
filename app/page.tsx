@@ -17,6 +17,7 @@ import { salvarRascunho, lerRascunho, limparRascunho, useRascunho } from '@/lib/
 import { PESSOAS } from '@/lib/equipe';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
+import FotosPaciente from './FotosPaciente';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -76,6 +77,7 @@ interface Movimentacao {
 interface Paciente {
   id: string;
   nome: string;
+  foto_perfil?: string | null;
   cpf?: string;
   telefone?: string;
   data_nascimento?: string;
@@ -454,7 +456,31 @@ function Dashboard() {
   }
 
   // --- ESTOQUE HANDLERS ---
+  const camposDoProduto = { nome, categoria, lote, quantidade, preco, validade };
+  const temProdutoDigitado =
+    nome.trim() !== '' || lote.trim() !== '' || quantidade.trim() !== '' ||
+    preco.trim() !== '' || validade !== '' || categoria !== 'medicacao';
+
+  const rascunhoProduto = useRascunho(
+    'produto-novo',
+    camposDoProduto,
+    mainTab === 'estoque' && !editingProductId,
+    temProdutoDigitado
+  );
+
+  function recuperarProduto() {
+    const r = rascunhoProduto.recuperar();
+    if (!r) return;
+    setNome(r.nome ?? '');
+    setCategoria(r.categoria ?? 'medicacao');
+    setLote(r.lote ?? '');
+    setQuantidade(r.quantidade ?? '');
+    setPreco(r.preco ?? '');
+    setValidade(r.validade ?? '');
+  }
+
   function limpaFormularioProduto() {
+    rascunhoProduto.concluir();
     setEditingProductId(null);
     setNome('');
     setCategoria('medicacao');
@@ -1627,6 +1653,17 @@ function Dashboard() {
                     )}
                   </div>
 
+                  {/* Fotos: perfil sempre à vista, antes e depois numa aba */}
+                  <FotosPaciente
+                    pacienteId={selectedPaciente.id}
+                    pacienteNome={selectedPaciente.nome}
+                    fotoPerfil={selectedPaciente.foto_perfil}
+                    onPerfilMudou={(caminho) => {
+                      setSelectedPaciente({ ...selectedPaciente, foto_perfil: caminho });
+                      fetchPacientes();
+                    }}
+                  />
+
                   {/* Marcar o retorno sem sair da ficha, durante a consulta */}
                   <div className="print:hidden">
                     <AgendarRetorno
@@ -1995,6 +2032,30 @@ function Dashboard() {
                   </button>
                 )}
               </div>
+              {rascunhoProduto.disponivel && (
+                <div className="mb-3 bg-blue-50 border border-blue-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <p className="text-xs text-blue-900">
+                    Você tinha um produto sendo cadastrado{' '}
+                    <strong className="whitespace-nowrap">({rascunhoProduto.disponivel})</strong>.
+                  </p>
+                  <div className="flex gap-1.5 flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={recuperarProduto}
+                      className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Recuperar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={rascunhoProduto.descartar}
+                      className="text-xs border border-blue-300 text-blue-900 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+                    >
+                      Descartar
+                    </button>
+                  </div>
+                </div>
+              )}
               <form onSubmit={handleAddProduct} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-7 gap-4">
                 <div className="lg:col-span-2">
                   <label className="block text-xs font-semibold text-amber-900 mb-1">Nome do Item *</label>
