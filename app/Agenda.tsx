@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
+import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
 import { useRascunho } from '@/lib/rascunho';
 import ItensDoAtendimento, {
   descreverItem,
@@ -1414,7 +1415,7 @@ function LinhaAgendamento({
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
-  const msgConfirmar = `Olá ${primeiroNome(nome)}, aqui é da clínica Dra. Bruna Oliveira. Seu atendimento (${rotuloDe(ag)}) está marcado para ${dataCurta(ag.data)}${ag.hora ? ` às ${ag.hora.slice(0, 5)}` : ''}. Podemos confirmar sua presença? Responda SIM para confirmar ou avise se precisar remarcar. 😊`;
+  const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora));
 
   return (
     <div

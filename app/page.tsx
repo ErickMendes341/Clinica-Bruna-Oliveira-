@@ -15,6 +15,7 @@ import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { salvarRascunho, lerRascunho, limparRascunho, useRascunho } from '@/lib/rascunho';
 import { PESSOAS } from '@/lib/equipe';
+import { mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
 import FotosPaciente from './FotosPaciente';
@@ -1268,7 +1269,7 @@ Dá para pôr pela ficha dele.`);
                   : horas.length === 1
                   ? `amanhã às ${horas[0]}`
                   : `amanhã às ${horas.slice(0, -1).join(', ')} e ${horas[horas.length - 1]}`;
-              return `Olá ${primeiroNomeDe(p.nome)}, aqui é da clínica Dra. Bruna Oliveira. Lembramos que o seu atendimento está agendado para ${quando}. Confirmado?`;
+              return mensagemDeLembrete(primeiroNomeDe(p.nome), quando);
             }}
           />
         </div>
