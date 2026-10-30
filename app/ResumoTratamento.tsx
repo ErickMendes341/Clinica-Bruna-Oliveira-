@@ -24,6 +24,7 @@ const ROTULO_TIPO: Record<string, string> = {
   intradermo: 'Intradermoterapia capilar',
   estetica: 'Estética',
   fisioterapia: 'Fisioterapia',
+  ginecologia: 'Ginecologia e Obstetrícia',
   bodyshape: 'BodyShape',
   outros: 'Outros',
 };

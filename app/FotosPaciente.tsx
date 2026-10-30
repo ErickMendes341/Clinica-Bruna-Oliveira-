@@ -1,8 +1,9 @@
 'use client';
 
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
 import { diminuirImagem } from '@/lib/imagem';
+import EscolherFoto from './EscolherFoto';
 
 const BALDE = 'fotos-pacientes';
 /** Link assinado vale 1 hora; renovamos ao recarregar a lista. */
@@ -54,8 +55,6 @@ export default function FotosPaciente({
   const [momento, setMomento] = useState<'antes' | 'depois'>('antes');
   const [descricao, setDescricao] = useState('');
   const [data, setData] = useState(hojeISO());
-  const entradaArquivo = useRef<HTMLInputElement>(null);
-  const entradaPerfil = useRef<HTMLInputElement>(null);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -129,7 +128,6 @@ export default function FotosPaciente({
       setErro(e instanceof Error ? e.message : 'Não foi possível enviar a foto.');
     } finally {
       setEnviando(false);
-      if (entradaArquivo.current) entradaArquivo.current.value = '';
     }
   }
 
@@ -162,7 +160,6 @@ export default function FotosPaciente({
       setErro(e instanceof Error ? e.message : 'Não foi possível enviar a foto de perfil.');
     } finally {
       setEnviando(false);
-      if (entradaPerfil.current) entradaPerfil.current.value = '';
     }
   }
 
@@ -252,24 +249,12 @@ export default function FotosPaciente({
           )}
         </div>
         <div className="flex gap-1.5 flex-wrap print:hidden">
-          <input
-            ref={entradaPerfil}
-            type="file"
-            accept="image/*"
-            className="hidden"
-            onChange={(e) => {
-              const f = e.target.files?.[0];
-              if (f) enviarPerfil(f);
-            }}
+          <EscolherFoto
+            onEscolher={enviarPerfil}
+            desabilitado={enviando}
+            compacto
+            rotuloCamera={fotoPerfil ? '📷 Trocar' : '📷 Tirar foto'}
           />
-          <button
-            type="button"
-            onClick={() => entradaPerfil.current?.click()}
-            disabled={enviando}
-            className="text-[11px] border border-amber-300 text-amber-900 hover:bg-amber-50 disabled:opacity-50 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-          >
-            {fotoPerfil ? 'Trocar foto' : '📷 Foto de perfil'}
-          </button>
           {fotoPerfil && (
             <button
               type="button"
@@ -343,24 +328,11 @@ export default function FotosPaciente({
                   onChange={(e) => setData(e.target.value)}
                   className="flex-1 min-w-0 px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
                 />
-                <input
-                  ref={entradaArquivo}
-                  type="file"
-                  accept="image/*"
-                  className="hidden"
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) enviar(f);
-                  }}
+                <EscolherFoto
+                  onEscolher={enviar}
+                  desabilitado={enviando}
+                  rotuloCamera={enviando ? 'Enviando…' : '📷 Tirar foto'}
                 />
-                <button
-                  type="button"
-                  onClick={() => entradaArquivo.current?.click()}
-                  disabled={enviando}
-                  className="flex-shrink-0 bg-amber-800 hover:bg-amber-900 disabled:opacity-50 text-white text-xs font-semibold px-4 py-2 rounded-lg transition-colors shadow-sm"
-                >
-                  {enviando ? 'Enviando…' : '📷 Escolher foto'}
-                </button>
               </div>
 
               <p className="text-[10px] text-amber-800/60 leading-relaxed">

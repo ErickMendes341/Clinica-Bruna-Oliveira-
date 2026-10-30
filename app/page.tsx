@@ -18,6 +18,8 @@ import { PESSOAS } from '@/lib/equipe';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
 import FotosPaciente from './FotosPaciente';
+import EscolherFoto from './EscolherFoto';
+import { enviarFotoDoPaciente } from '@/lib/fotos';
 import { descreverItem } from './ItensDoAtendimento';
 
 /** Item que a agenda deixou separado para um atendimento. */
@@ -213,6 +215,36 @@ function Dashboard() {
   // pessoa costuma aplicar vários seguidos — e errar isso vira pagamento
   // errado no fim do mês.
   const [quemAplicou, setQuemAplicou] = useState('');
+  // Paciente novo ainda não tem id, então a foto espera na memória e sobe
+  // assim que o cadastro é criado.
+  const [fotoPerfilNova, setFotoPerfilNova] = useState<File | null>(null);
+  const [fotoAntesNova, setFotoAntesNova] = useState<File | null>(null);
+  const [previaPerfil, setPreviaPerfil] = useState('');
+  const [previaAntes, setPreviaAntes] = useState('');
+  const [enviandoFotos, setEnviandoFotos] = useState(false);
+
+  function escolherFotoNova(qual: 'perfil' | 'antes', arquivo: File) {
+    const url = URL.createObjectURL(arquivo);
+    if (qual === 'perfil') {
+      if (previaPerfil) URL.revokeObjectURL(previaPerfil);
+      setFotoPerfilNova(arquivo);
+      setPreviaPerfil(url);
+    } else {
+      if (previaAntes) URL.revokeObjectURL(previaAntes);
+      setFotoAntesNova(arquivo);
+      setPreviaAntes(url);
+    }
+  }
+
+  function limparFotosNovas() {
+    if (previaPerfil) URL.revokeObjectURL(previaPerfil);
+    if (previaAntes) URL.revokeObjectURL(previaAntes);
+    setFotoPerfilNova(null);
+    setFotoAntesNova(null);
+    setPreviaPerfil('');
+    setPreviaAntes('');
+  }
+
   // Documento comercial para entregar ao paciente, separado do prontuário.
   const [resumoAberto, setResumoAberto] = useState(false);
 
@@ -776,7 +808,11 @@ function Dashboard() {
           fetchPacientes();
         }
       } else {
-        const { error } = await supabase.from('pacientes').insert([payload]);
+        const { data: criado, error } = await supabase
+          .from('pacientes')
+          .insert([payload])
+          .select('id')
+          .single();
         if (error) {
           alert(
             error.message.includes('CPF')
@@ -785,6 +821,19 @@ function Dashboard() {
           );
         }
         else {
+          // Fotos tiradas durante o cadastro sobem agora, que já há id.
+          const novoId = (criado as { id: string } | null)?.id;
+          if (novoId && (fotoPerfilNova || fotoAntesNova)) {
+            setEnviandoFotos(true);
+            const falhas = await enviarFotoDoPaciente(novoId, fotoPerfilNova, fotoAntesNova);
+            setEnviandoFotos(false);
+            if (falhas) {
+              alert(`Paciente cadastrado, mas a foto não subiu: ${falhas}
+
+Dá para pôr pela ficha dele.`);
+            }
+          }
+          limparFotosNovas();
           limpaFormularioPaciente();
           fetchPacientes();
         }
@@ -1322,6 +1371,43 @@ function Dashboard() {
                       </div>
                     </div>
                   )}
+                  {/* Fotos tiradas na hora do cadastro. Só no cadastro novo:
+                      editando, as fotos são postas pela própria ficha. */}
+                  {!editingPacienteId && (
+                    <div className="grid grid-cols-2 gap-2">
+                      {([
+                        { qual: 'perfil' as const, rotulo: 'Foto de perfil', previa: previaPerfil, redonda: true },
+                        { qual: 'antes' as const, rotulo: 'Foto de antes', previa: previaAntes, redonda: false },
+                      ]).map((f) => (
+                        <div
+                          key={f.qual}
+                          className="border border-amber-200 rounded-lg p-2.5 flex flex-col items-center gap-2 bg-amber-50/40"
+                        >
+                          <p className="text-[11px] font-semibold text-amber-900">{f.rotulo}</p>
+                          <div
+                            className={`w-20 h-20 overflow-hidden bg-amber-100 border border-amber-200 flex items-center justify-center flex-shrink-0 ${
+                              f.redonda ? 'rounded-full' : 'rounded-lg'
+                            }`}
+                          >
+                            {f.previa ? (
+                              // eslint-disable-next-line @next/next/no-img-element
+                              <img src={f.previa} alt={f.rotulo} className="w-full h-full object-cover" />
+                            ) : (
+                              <span className="text-2xl text-amber-700/40">{f.redonda ? '👤' : '📷'}</span>
+                            )}
+                          </div>
+                          <EscolherFoto
+                            onEscolher={(arq) => escolherFotoNova(f.qual, arq)}
+                            desabilitado={enviandoFotos}
+                            compacto
+                            rotuloCamera="📷 Tirar"
+                            rotuloGaleria="🖼️"
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
                   <div>
                     <label className="block text-xs font-semibold text-amber-900 mb-1">Nome Completo *</label>
                     <input type="text" value={nomePaciente} onChange={(e) => setNomePaciente(e.target.value)} className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-amber-500/50" placeholder="Ex: Lucas Andrade" required />

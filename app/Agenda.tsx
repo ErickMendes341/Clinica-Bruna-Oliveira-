@@ -165,6 +165,7 @@ const TIPOS = [
   { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: '', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#F0FDF4' },
   { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
+  { id: 'ginecologia', label: 'Ginecologia e Obstetrícia', profissional: 'Giullia', cor: '#0f766e', fundo: '#F0FDFA' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#FDF4FF' },
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
@@ -177,6 +178,7 @@ const LEGENDA = [
   { nome: 'Nicole, Melissa e Maisa', cor: '#c2410c' },
   { nome: 'Ludimila', cor: '#15803d' },
   { nome: 'Thalita', cor: '#a16207' },
+  { nome: 'Dra. Giullia', cor: '#0f766e' },
   { nome: 'BodyShape', cor: '#a21caf' },
 ];
 

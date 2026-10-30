@@ -10,6 +10,8 @@
  */
 export const PESSOAS = [
   'Bruna',
+  // Ginecologia e obstetrícia.
+  'Giullia',
   // Medicação e intradermoterapia capilar: as três fazem o mesmo serviço.
   'Nicole',
   'Melissa',
