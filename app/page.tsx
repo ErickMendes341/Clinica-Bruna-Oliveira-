@@ -13,7 +13,7 @@ import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
-import { salvarRascunho, lerRascunho, limparRascunho, useRascunho } from '@/lib/rascunho';
+import { salvarRascunho, lerRascunho, limparRascunho, useRascunho, guardarLugar, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
@@ -948,7 +948,7 @@ Dá para pôr pela ficha dele.`);
      Também empilhamos no histórico do navegador, para que o botão voltar
      do celular volte dentro do app em vez de fechá-lo.               */
 
-  function aplicarVista(v: Vista) {
+  function aplicarVista(v: Vista, manterComoEstava = false) {
     setMainTab(v.tab);
     if (v.pacienteId) {
       const p = pacientes.find((x) => x.id === v.pacienteId);
@@ -957,11 +957,15 @@ Dá para pôr pela ficha dele.`);
         fetchConsumos(p.id);
         fetchListasPendentes(p.id);
         fetchProximoAgendamento(p.id);
-        // Cada ficha abre enxuta; a pessoa expande só o que precisa.
-        setPesagemAberta(false);
-        setPagamentosAberto(false);
-        setPrescreverAberto(false);
-        setConsumosAberto(false);
+        // Cada ficha abre enxuta; a pessoa expande só o que precisa. Mas
+        // numa volta ao lugar onde parou, achar tudo fechado é perder o
+        // lugar — então quem volta manda manterComoEstava.
+        if (!manterComoEstava) {
+          setPesagemAberta(false);
+          setPagamentosAberto(false);
+          setPrescreverAberto(false);
+          setConsumosAberto(false);
+        }
       } else {
         setSelectedPaciente(null);
       }
@@ -975,38 +979,98 @@ Dá para pôr pela ficha dele.`);
      no meio de um atendimento perdia o lugar. Guardamos a aba e o
      paciente neste aparelho e devolvemos ao abrir.                     */
 
-  const ONDE_PAREI = 'onde-parei';
+  /* ---------- Voltar exatamente onde parou ----------
+     No celular, usar outro aplicativo faz o navegador descartar a nossa
+     página. Ao voltar, ela recomeça do zero — e a equipe perdia o lugar
+     no meio de um atendimento.
 
-  /* A ordem aqui importa e já me enganou uma vez: a tela nasce na Agenda
+     A ordem aqui importa e já me enganou uma vez: a tela nasce na Agenda
      sem paciente, e se a gravação rodar nesse primeiro instante ela apaga
-     o lugar guardado antes de alguém conseguir lê-lo. Por isso só gravamos
-     depois que a tentativa de voltar aconteceu.                        */
-  const podeGuardar = useRef(false);
-  const pacienteEsperando = useRef<string | null>(null);
+     o lugar guardado antes de alguém conseguir lê-lo. Por isso só
+     gravamos depois que a tentativa de voltar aconteceu.               */
 
-  // Primeiro a aba, assim que soubermos o que esta pessoa pode ver.
+  const ONDE_PAREI = 'tela-principal';
+  const [voltouAoLugar, setVoltouAoLugar] = useState(false);
+  const pacienteEsperando = useRef<string | null>(null);
+  const rolagemEsperando = useRef<number | null>(null);
+
+  useGuardarLugar(
+    ONDE_PAREI,
+    {
+      tab: mainTab,
+      pacienteId: selectedPaciente?.id ?? null,
+      // Seções abertas: achar tudo fechado também é perder o lugar.
+      pesagem: pesagemAberta,
+      pagamentos: pagamentosAberto,
+      prescrever: prescreverAberto,
+      consumos: consumosAberto,
+      // Estoque e buscas: quem estava filtrando não quer recomeçar.
+      estoqueAba: activeTab,
+      estoqueBusca: searchTerm,
+      buscaPaciente: searchPaciente,
+      rolagem: typeof window === 'undefined' ? 0 : window.scrollY,
+    },
+    voltouAoLugar
+  );
+
+  // Primeiro a aba e as seções, assim que soubermos o que a pessoa pode ver.
   useEffect(() => {
-    if (podeGuardar.current || abasVisiveis.length === 0) return;
-    podeGuardar.current = true;
-    const onde = lerRascunho<Vista>(ONDE_PAREI);
+    if (voltouAoLugar || abasVisiveis.length === 0) return;
+    setVoltouAoLugar(true);
+
+    const onde = lerLugar<{
+      tab: typeof mainTab;
+      pacienteId: string | null;
+      pesagem?: boolean;
+      pagamentos?: boolean;
+      prescrever?: boolean;
+      consumos?: boolean;
+      estoqueAba?: string;
+      estoqueBusca?: string;
+      buscaPaciente?: string;
+      rolagem?: number;
+    }>(ONDE_PAREI);
     if (!onde) return;
+
     // A aba precisa continuar permitida: o papel pode ter mudado.
     if (abasVisiveis.some((a) => a.id === onde.tab)) setMainTab(onde.tab);
+    setPesagemAberta(!!onde.pesagem);
+    setPagamentosAberto(!!onde.pagamentos);
+    setPrescreverAberto(!!onde.prescrever);
+    setConsumosAberto(!!onde.consumos);
+    if (onde.estoqueAba) setActiveTab(onde.estoqueAba);
+    if (onde.estoqueBusca) setSearchTerm(onde.estoqueBusca);
+    if (onde.buscaPaciente) setSearchPaciente(onde.buscaPaciente);
+
     pacienteEsperando.current = onde.pacienteId;
-  }, [abasVisiveis.length]);
+    rolagemEsperando.current = onde.rolagem ?? null;
+    // Sem ficha para reabrir, a rolagem pode voltar já.
+    if (!onde.pacienteId) devolverRolagem();
+  }, [abasVisiveis.length, voltouAoLugar]);
 
   // A ficha, quando a lista de pacientes chegar.
   useEffect(() => {
     const id = pacienteEsperando.current;
     if (!id || pacientes.length === 0) return;
     pacienteEsperando.current = null;
-    if (pacientes.some((x) => x.id === id)) aplicarVista({ tab: 'pacientes', pacienteId: id });
+    if (pacientes.some((x) => x.id === id)) {
+      aplicarVista({ tab: 'pacientes', pacienteId: id }, true);
+      devolverRolagem();
+    }
   }, [pacientes.length]);
 
-  useEffect(() => {
-    if (!podeGuardar.current) return;
-    salvarRascunho(ONDE_PAREI, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null });
-  }, [mainTab, selectedPaciente?.id]);
+  /** A altura só existe depois que o conteúdo desenha; daí as tentativas. */
+  function devolverRolagem() {
+    const y = rolagemEsperando.current;
+    if (y === null || y < 40) return;
+    rolagemEsperando.current = null;
+    let tentativas = 0;
+    const tentar = () => {
+      window.scrollTo({ top: y, behavior: 'auto' });
+      if (++tentativas < 6 && Math.abs(window.scrollY - y) > 8) setTimeout(tentar, 120);
+    };
+    setTimeout(tentar, 80);
+  }
 
   function irPara(v: Vista) {
     setPilhaVistas((h) => [...h, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null }]);

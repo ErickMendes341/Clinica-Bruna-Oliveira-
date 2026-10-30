@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import { FORMAS, rotuloForma, reais, dataBR, agrupar, resumoFormas } from './Pagamentos';
 import type { ParteDb, Pagamento } from './Pagamentos';
 import Despesas, { type Despesa, rotuloCategoria, iconeCategoria } from './Despesas';
@@ -97,7 +98,9 @@ function baixarPlanilha(linhas: Linha[], nomeArquivo: string) {
 /* ------------------------------------------------------------------ */
 
 export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id: string) => void }) {
-  const [modo, setModo] = useState<'dia' | 'mes' | 'geral'>('dia');
+  // A visão escolhida volta junto: quem estava no resumo do mês continua lá.
+  const guardado = lerLugar<{ modo: 'dia' | 'mes' | 'geral'; lado: 'entradas' | 'saidas' | 'resumo' }>('financeiro');
+  const [modo, setModo] = useState<'dia' | 'mes' | 'geral'>(guardado?.modo ?? 'dia');
   const [mes, setMes] = useState(mesAtual());
   const [dia, setDia] = useState(hojeISO());
   const [linhas, setLinhas] = useState<Linha[]>([]);
@@ -105,7 +108,8 @@ export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id:
   const [despesas, setDespesas] = useState<Despesa[]>([]);
   const [carregando, setCarregando] = useState(true);
   // Entradas (o que entrou), saídas (o que saiu) ou o resumo dos dois.
-  const [lado, setLado] = useState<'entradas' | 'saidas' | 'resumo'>('entradas');
+  const [lado, setLado] = useState<'entradas' | 'saidas' | 'resumo'>(guardado?.lado ?? 'entradas');
+  useGuardarLugar('financeiro', { modo, lado });
   const [busca, setBusca] = useState('');
   const [visao, setVisao] = useState<'lancamentos' | 'por_paciente'>('lancamentos');
 

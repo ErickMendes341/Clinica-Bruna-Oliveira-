@@ -172,3 +172,68 @@ export function useAvisoDeSaida(temCoisaNaoSalva: boolean) {
     return () => window.removeEventListener('beforeunload', aviso);
   }, [temCoisaNaoSalva]);
 }
+
+/**
+ * Onde a pessoa estava, para o app reabrir no mesmo lugar.
+ *
+ * Separado do rascunho de formulário de propósito: rascunho é texto que
+ * ainda não foi salvo e vence em um dia; isto é posição de tela, que a
+ * equipe espera encontrar igual mesmo no dia seguinte.
+ *
+ * Grava na saída do app (trocar de aplicativo, bloquear a tela) porque é
+ * aí que o celular descarta a página sem avisar.
+ */
+
+const LUGAR = 'clinica:lugar:';
+
+export function guardarLugar(chave: string, estado: unknown) {
+  try {
+    localStorage.setItem(LUGAR + chave, JSON.stringify(estado));
+  } catch {
+    /* sem memória de lugar é melhor do que travar o app */
+  }
+}
+
+export function lerLugar<T>(chave: string): T | null {
+  try {
+    const bruto = localStorage.getItem(LUGAR + chave);
+    return bruto ? (JSON.parse(bruto) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Guarda o estado de uma tela e avisa na saída do app.
+ *
+ * @param chave   nome da tela
+ * @param estado  o que precisa ser lembrado
+ * @param pronto  false enquanto a tela ainda está montando: evita gravar
+ *                o estado recém-nascido por cima do que foi guardado
+ */
+export function useGuardarLugar(chave: string, estado: unknown, pronto = true) {
+  const atual = useRef(estado);
+  useEffect(() => {
+    atual.current = estado;
+  });
+
+  const assinatura = JSON.stringify(estado);
+  useEffect(() => {
+    if (!pronto) return;
+    guardarLugar(chave, atual.current);
+  }, [chave, pronto, assinatura]);
+
+  useEffect(() => {
+    if (!pronto) return;
+    const guardar = () => guardarLugar(chave, atual.current);
+    const aoEsconder = () => {
+      if (document.visibilityState === 'hidden') guardar();
+    };
+    document.addEventListener('visibilitychange', aoEsconder);
+    window.addEventListener('pagehide', guardar);
+    return () => {
+      document.removeEventListener('visibilitychange', aoEsconder);
+      window.removeEventListener('pagehide', guardar);
+    };
+  }, [chave, pronto]);
+}

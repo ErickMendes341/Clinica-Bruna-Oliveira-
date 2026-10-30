@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
-import { useRascunho } from '@/lib/rascunho';
+import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import ItensDoAtendimento, {
   descreverItem,
   type ItemAtendimento,
@@ -317,7 +317,9 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   const [preset, setPreset] = useState<{ data?: string; hora?: string }>({});
 
   // Visão de um dia específico
-  const [dia, setDia] = useState(hojeISO());
+  // Quem estava olhando a agenda de quinta não quer voltar na de hoje.
+  const [dia, setDia] = useState(() => lerLugar<{ dia: string }>('agenda')?.dia ?? hojeISO());
+  useGuardarLugar('agenda', { dia });
   const [agendaDia, setAgendaDia] = useState<Agendamento[]>([]);
   const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
   const [editandoConfig, setEditandoConfig] = useState(false);
