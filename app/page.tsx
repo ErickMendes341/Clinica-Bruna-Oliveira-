@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import AuthGate from './AuthGate';
 import Agenda from './Agenda';
@@ -19,6 +19,7 @@ import { mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
 import FotosPaciente from './FotosPaciente';
+import FotoPerfil from './FotoPerfil';
 import EscolherFoto from './EscolherFoto';
 import { enviarFotoDoPaciente } from '@/lib/fotos';
 import { descreverItem } from './ItensDoAtendimento';
@@ -957,6 +958,30 @@ Dá para pôr pela ficha dele.`);
     }
   }
 
+  /* ---------- Voltar onde parou ----------
+     Sair do app e reabrir jogava tudo para a tela inicial, e quem estava
+     no meio de um atendimento perdia o lugar. Guardamos a aba e o
+     paciente neste aparelho e devolvemos ao abrir.                     */
+
+  const ONDE_PAREI = 'onde-parei';
+
+  useEffect(() => {
+    salvarRascunho(ONDE_PAREI, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null });
+  }, [mainTab, selectedPaciente?.id]);
+
+  // Só depois que a lista de pacientes chega é que dá para reabrir a ficha.
+  const jaVoltou = useRef(false);
+  useEffect(() => {
+    if (jaVoltou.current || pacientes.length === 0) return;
+    jaVoltou.current = true;
+    const onde = lerRascunho<Vista>(ONDE_PAREI);
+    if (!onde) return;
+    // A aba precisa continuar permitida: o papel pode ter mudado.
+    const permitida = abasVisiveis.some((a) => a.id === onde.tab);
+    if (!permitida) return;
+    aplicarVista(onde);
+  }, [pacientes.length]);
+
   function irPara(v: Vista) {
     setPilhaVistas((h) => [...h, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null }]);
     window.history.pushState({ app: true }, '');
@@ -1314,7 +1339,11 @@ Dá para pôr pela ficha dele.`);
         {mainTab === 'pacientes' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
-            <div className="space-y-6 print:hidden">
+            <div
+              className={`space-y-6 print:hidden ${
+                selectedPaciente ? 'hidden lg:block' : ''
+              }`}
+            >
               {/* Cópia de segurança de tudo que está no sistema */}
               {pode('total') && <Backup />}
 
@@ -1599,79 +1628,108 @@ Dá para pôr pela ficha dele.`);
                 <div className="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-amber-200/80 space-y-6 print:border-none print:shadow-none print:p-0">
                   
                   <div className="border-b border-amber-100 pb-4">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <div className="flex items-center gap-2 mb-1">
+                    {/* No celular a ficha é uma tela só: este é o caminho de volta. */}
+                    <button
+                      onClick={voltar}
+                      className="lg:hidden print:hidden mb-3 flex items-center gap-1.5 text-sm font-semibold text-amber-900 hover:text-amber-950"
+                    >
+                      ← Voltar para a lista
+                    </button>
+
+                    {/* Foto e nome juntos, no alto à esquerda. */}
+                    <div className="flex items-start gap-3">
+                      <FotoPerfil
+                        pacienteId={selectedPaciente.id}
+                        pacienteNome={selectedPaciente.nome}
+                        caminho={selectedPaciente.foto_perfil}
+                        onMudou={(caminho) => {
+                          setSelectedPaciente({ ...selectedPaciente, foto_perfil: caminho });
+                          fetchPacientes();
+                        }}
+                      />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-1.5 mb-1">
                           <span className="text-[10px] uppercase tracking-wider font-bold bg-amber-100 text-amber-900 px-2.5 py-0.5 rounded-full print:hidden">
-                            Ficha Técnica do Paciente
+                            Ficha do Paciente
                           </span>
                           {ehAniversarianteHoje(selectedPaciente.data_nascimento) && (
                             <span className="text-[10px] uppercase font-bold bg-amber-500 text-white px-2.5 py-0.5 rounded-full">
-                              🎂 Aniversariante de Hoje!
+                              🎂 Aniversariante!
                             </span>
                           )}
                           {agendadosAmanha.has(selectedPaciente.id) && (
                             <span className="text-[10px] uppercase font-bold bg-blue-600 text-white px-2.5 py-0.5 rounded-full">
-                              🔔 Retorno Amanhã!
+                              🔔 Retorno amanhã
                             </span>
                           )}
                         </div>
-                        <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950">{selectedPaciente.nome}</h2>
+                        <h2 className="text-xl sm:text-2xl md:text-3xl font-serif font-bold text-amber-950 leading-tight break-words">
+                          {selectedPaciente.nome}
+                        </h2>
                       </div>
-                      
-                      <div className="flex flex-wrap items-center gap-2 print:hidden">
-                        {selectedPaciente.telefone && (
-                          <a
-                            href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome} aqui é da clinica Bruna Oliveira.`)}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-xs bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-3 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
-                          >
-                            💬 Contatar no WhatsApp
-                          </a>
-                        )}
-                        <button
-                          onClick={() => handleEnviarFicha(selectedPaciente)}
-                          title="Manda um link para o paciente preencher a própria ficha no celular"
-                          className="text-xs bg-white border border-emerald-700 text-emerald-800 hover:bg-emerald-50 font-semibold px-3 py-2 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
+                    </div>
+
+                    {/* Ações: só o desenho. O nome escrito ocupava três linhas
+                        no celular e empurrava a ficha para baixo. */}
+                    <div className="flex items-center gap-2 mt-3 print:hidden">
+                      {selectedPaciente.telefone && (
+                        <a
+                          href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome} aqui é da clinica Bruna Oliveira.`)}
+                          target="_blank"
+                          rel="noreferrer"
+                          title="Falar no WhatsApp"
+                          aria-label="Falar no WhatsApp"
+                          className="w-11 h-11 flex items-center justify-center text-lg bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl shadow transition-colors"
                         >
-                          📲 Pedir ficha
-                        </button>
-                        <button
-                          onClick={() => setResumoAberto(true)}
-                          title="Sessões, medicações e total pago, para entregar ao paciente"
-                          className="text-xs bg-white border border-amber-700 text-amber-900 hover:bg-amber-50 font-semibold px-3 py-2 rounded-xl shadow-sm transition-colors flex items-center gap-1.5"
-                        >
-                          📄 Resumo
-                        </button>
-                        <button
-                          onClick={() => window.print()}
-                          className="text-xs bg-amber-900 hover:bg-amber-950 text-white font-semibold px-4 py-2 rounded-xl shadow transition-colors flex items-center gap-1.5"
-                        >
-                          🖨️ Imprimir
-                        </button>
-                        <button
-                          onClick={() => {
-                            handlePrepareEditPaciente(selectedPaciente);
-                            // No celular o formulário fica acima da ficha: sem
-                            // isso, clicar em Editar parecia não fazer nada.
-                            setTimeout(() => {
-                              const el = document.getElementById('form-paciente');
-                              if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                            }, 60);
-                          }}
-                          className="text-xs bg-amber-100 text-amber-900 font-semibold px-3 py-2 rounded-xl hover:bg-amber-200"
-                        >
-                          ✏️ Editar
-                        </button>
-                        <button
-                          onClick={() => setGerenciandoPaciente(selectedPaciente)}
-                          title="Arquivar ou excluir"
-                          className="text-xs bg-red-50 text-red-800 border border-red-200 font-semibold px-3 py-2 rounded-xl hover:bg-red-100"
-                        >
-                          🗑️ Excluir
-                        </button>
-                      </div>
+                          💬
+                        </a>
+                      )}
+                      <button
+                        onClick={() => handleEnviarFicha(selectedPaciente)}
+                        title="Pedir que o paciente preencha a ficha pelo celular"
+                        aria-label="Pedir ficha"
+                        className="w-11 h-11 flex items-center justify-center text-lg bg-white border border-emerald-700 text-emerald-800 hover:bg-emerald-50 rounded-xl shadow-sm transition-colors"
+                      >
+                        📲
+                      </button>
+                      <button
+                        onClick={() => setResumoAberto(true)}
+                        title="Resumo do tratamento para entregar ao paciente"
+                        aria-label="Resumo do tratamento"
+                        className="w-11 h-11 flex items-center justify-center text-lg bg-white border border-amber-700 text-amber-900 hover:bg-amber-50 rounded-xl shadow-sm transition-colors"
+                      >
+                        📄
+                      </button>
+                      <button
+                        onClick={() => window.print()}
+                        title="Imprimir a ficha"
+                        aria-label="Imprimir"
+                        className="w-11 h-11 flex items-center justify-center text-lg bg-amber-900 hover:bg-amber-950 text-white rounded-xl shadow transition-colors"
+                      >
+                        🖨️
+                      </button>
+                      <button
+                        onClick={() => {
+                          handlePrepareEditPaciente(selectedPaciente);
+                          setTimeout(() => {
+                            const el = document.getElementById('form-paciente');
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                          }, 60);
+                        }}
+                        title="Editar os dados do paciente"
+                        aria-label="Editar"
+                        className="w-11 h-11 flex items-center justify-center text-lg bg-amber-100 text-amber-900 hover:bg-amber-200 rounded-xl transition-colors"
+                      >
+                        ✏️
+                      </button>
+                      <button
+                        onClick={() => setGerenciandoPaciente(selectedPaciente)}
+                        title="Arquivar ou excluir o paciente"
+                        aria-label="Arquivar ou excluir"
+                        className="w-11 h-11 flex items-center justify-center text-lg bg-red-50 text-red-800 border border-red-200 hover:bg-red-100 rounded-xl transition-colors"
+                      >
+                        🗑️
+                      </button>
                     </div>
 
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-xs">
@@ -1740,16 +1798,8 @@ Dá para pôr pela ficha dele.`);
                     )}
                   </div>
 
-                  {/* Fotos: perfil sempre à vista, antes e depois numa aba */}
-                  <FotosPaciente
-                    pacienteId={selectedPaciente.id}
-                    pacienteNome={selectedPaciente.nome}
-                    fotoPerfil={selectedPaciente.foto_perfil}
-                    onPerfilMudou={(caminho) => {
-                      setSelectedPaciente({ ...selectedPaciente, foto_perfil: caminho });
-                      fetchPacientes();
-                    }}
-                  />
+                  {/* Antes e depois. A foto de perfil fica no cabeçalho. */}
+                  <FotosPaciente pacienteId={selectedPaciente.id} />
 
                   {/* Marcar o retorno sem sair da ficha, durante a consulta */}
                   <div className="print:hidden">

@@ -32,17 +32,7 @@ function hojeISO() {
  * uma hora. Não existe endereço público — quem não está logado na equipe
  * não abre a imagem nem com o link na mão.
  */
-export default function FotosPaciente({
-  pacienteId,
-  pacienteNome,
-  fotoPerfil,
-  onPerfilMudou,
-}: {
-  pacienteId: string;
-  pacienteNome: string;
-  fotoPerfil?: string | null;
-  onPerfilMudou: (caminho: string | null) => void;
-}) {
+export default function FotosPaciente({ pacienteId }: { pacienteId: string }) {
   const [aberto, setAberto] = useState(false);
   const [fotos, setFotos] = useState<Foto[]>([]);
   const [links, setLinks] = useState<Record<string, string>>({});
@@ -67,7 +57,7 @@ export default function FotosPaciente({
     const lista = (linhas as Foto[] | null) ?? [];
     setFotos(lista);
 
-    const caminhos = [...lista.map((f) => f.caminho), ...(fotoPerfil ? [fotoPerfil] : [])];
+    const caminhos = lista.map((f) => f.caminho);
     if (caminhos.length > 0) {
       const { data: assinados } = await supabase.storage
         .from(BALDE)
@@ -81,11 +71,11 @@ export default function FotosPaciente({
       setLinks({});
     }
     setCarregando(false);
-  }, [pacienteId, fotoPerfil]);
+  }, [pacienteId]);
 
   useEffect(() => {
-    if (aberto || fotoPerfil) carregar();
-  }, [aberto, fotoPerfil, carregar]);
+    if (aberto) carregar();
+  }, [aberto, carregar]);
 
   /** Nome do arquivo no balde: pasta por paciente, nome sem repetir. */
   function caminhoNovo(nomeArquivo: string) {
@@ -131,38 +121,6 @@ export default function FotosPaciente({
     }
   }
 
-  async function enviarPerfil(arquivo: File) {
-    setErro('');
-    setEnviando(true);
-    try {
-      const menor = await diminuirImagem(arquivo);
-      const caminho = caminhoNovo(menor.name);
-
-      const { error: erroUp } = await supabase.storage
-        .from(BALDE)
-        .upload(caminho, menor, { contentType: menor.type, upsert: false });
-      if (erroUp) throw new Error(erroUp.message);
-
-      const anterior = fotoPerfil;
-      const { error: erroPac } = await supabase
-        .from('pacientes')
-        .update({ foto_perfil: caminho })
-        .eq('id', pacienteId);
-      if (erroPac) {
-        await supabase.storage.from(BALDE).remove([caminho]);
-        throw new Error(erroPac.message);
-      }
-
-      // Trocou de foto: a antiga não serve mais e ocupa espaço.
-      if (anterior) await supabase.storage.from(BALDE).remove([anterior]);
-      onPerfilMudou(caminho);
-    } catch (e) {
-      setErro(e instanceof Error ? e.message : 'Não foi possível enviar a foto de perfil.');
-    } finally {
-      setEnviando(false);
-    }
-  }
-
   async function apagar(f: Foto) {
     const texto = f.descricao?.trim() ? `"${f.descricao.trim()}"` : `de ${dia(f.data)}`;
     if (!confirm(`Apagar a foto ${texto}?\n\nIsso não pode ser desfeito.`)) return;
@@ -175,21 +133,6 @@ export default function FotosPaciente({
     await supabase.storage.from(BALDE).remove([f.caminho]);
     setAmpliada(null);
     await carregar();
-  }
-
-  async function apagarPerfil() {
-    if (!fotoPerfil) return;
-    if (!confirm('Tirar a foto de perfil deste paciente?')) return;
-    const { error } = await supabase
-      .from('pacientes')
-      .update({ foto_perfil: null })
-      .eq('id', pacienteId);
-    if (error) {
-      setErro(`Não foi possível tirar: ${error.message}`);
-      return;
-    }
-    await supabase.storage.from(BALDE).remove([fotoPerfil]);
-    onPerfilMudou(null);
   }
 
   const antes = fotos.filter((f) => f.momento === 'antes');
@@ -238,35 +181,6 @@ export default function FotosPaciente({
 
   return (
     <>
-      {/* Foto de perfil: fica fora da aba, sempre à vista na ficha. */}
-      <div className="flex items-center gap-3">
-        <div className="w-16 h-16 rounded-full border-2 border-amber-300 overflow-hidden bg-amber-100 flex-shrink-0 flex items-center justify-center">
-          {fotoPerfil && links[fotoPerfil] ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={links[fotoPerfil]} alt={pacienteNome} className="w-full h-full object-cover" />
-          ) : (
-            <span className="text-2xl text-amber-700/50">👤</span>
-          )}
-        </div>
-        <div className="flex gap-1.5 flex-wrap print:hidden">
-          <EscolherFoto
-            onEscolher={enviarPerfil}
-            desabilitado={enviando}
-            compacto
-            rotuloCamera={fotoPerfil ? '📷 Trocar' : '📷 Tirar foto'}
-          />
-          {fotoPerfil && (
-            <button
-              type="button"
-              onClick={apagarPerfil}
-              className="text-[11px] border border-amber-200 text-red-700 hover:bg-red-50 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-            >
-              Tirar
-            </button>
-          )}
-        </div>
-      </div>
-
       {/* Antes e depois */}
       <div className="bg-white border border-amber-200/70 rounded-xl overflow-hidden print:hidden">
         <button
