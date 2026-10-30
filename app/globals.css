@@ -1,1 +1,54 @@
 @import "tailwindcss";
+
+/* ------------------------------------------------------------------ */
+/* Celular e tablet                                                    */
+/* ------------------------------------------------------------------ */
+
+/*
+ * O iPhone dá zoom sozinho ao tocar em qualquer campo com letra menor
+ * que 16px — e o app usa 14px em quase tudo. O resultado é a tela pulando
+ * a cada toque e a equipe tendo que afastar com os dedos de novo.
+ *
+ * Subir para 16px resolve na origem. Não dá para resolver bloqueando o
+ * zoom no viewport: isso também impediria quem precisa aproximar para
+ * enxergar, o que seria pior.
+ *
+ * O !important é necessário: as classes do Tailwind ganham de um seletor
+ * de elemento comum.
+ */
+@media (max-width: 767px) {
+  input:not([type='checkbox']):not([type='radio']),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/*
+ * Rede de segurança contra o deslize lateral.
+ *
+ * Quando um bloco fica mais largo que a tela, o navegador não corta: ele
+ * alarga a página inteira e encolhe todo o resto numa coluna estreita,
+ * com faixa branca de um lado. Era o que acontecia na ficha do paciente
+ * e nas abas do estoque.
+ *
+ * As causas foram corrigidas uma a uma (fileiras de botão agora quebram
+ * linha ou rolam). Isto aqui é só o cinto de segurança para a próxima
+ * que escapar.
+ */
+html {
+  overflow-x: hidden;
+}
+
+/*
+ * Rolagem lateral com o dedo, onde ela é proposital: abas de categoria e
+ * tabelas largas. Esconde a barra, que no celular só ocupa espaço.
+ */
+.rolar-lado {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.rolar-lado::-webkit-scrollbar {
+  display: none;
+}

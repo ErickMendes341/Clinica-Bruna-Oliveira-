@@ -1619,7 +1619,7 @@ Dá para pôr pela ficha dele.`);
                         <h2 className="text-2xl md:text-3xl font-serif font-bold text-amber-950">{selectedPaciente.nome}</h2>
                       </div>
                       
-                      <div className="flex items-center space-x-2 print:hidden">
+                      <div className="flex flex-wrap items-center gap-2 print:hidden">
                         {selectedPaciente.telefone && (
                           <a
                             href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome} aqui é da clinica Bruna Oliveira.`)}
@@ -2192,9 +2192,13 @@ Dá para pôr pela ficha dele.`);
 
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-amber-200/60 space-y-4">
               <div className="flex flex-col md:flex-row items-center justify-between gap-4 border-b border-amber-100 pb-4">
-                <div className="flex space-x-1 bg-amber-50 p-1 rounded-xl border border-amber-200/50">
+                <div className="rolar-lado flex space-x-1 bg-amber-50 p-1 rounded-xl border border-amber-200/50 max-w-full">
                   {CATEGORIAS.map((cat) => (
-                    <button key={cat.id} onClick={() => setActiveTab(cat.id)} className={`px-4 py-1.5 text-xs font-medium rounded-lg transition-all ${activeTab === cat.id ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900'}`}>
+                    <button
+                      key={cat.id}
+                      onClick={() => setActiveTab(cat.id)}
+                      className={`flex-shrink-0 whitespace-nowrap px-4 py-2 text-xs font-medium rounded-lg transition-all ${activeTab === cat.id ? 'bg-amber-800 text-white shadow-sm' : 'text-amber-900'}`}
+                    >
                       {cat.label}
                     </button>
                   ))}
@@ -2213,8 +2217,8 @@ Dá para pôr pela ficha dele.`);
                 </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-sm">
+              <div className="rolar-lado">
+                <table className="w-full text-left text-sm min-w-[42rem]">
                   <thead className="bg-amber-50/50 text-amber-950 font-serif">
                     <tr>
                       <th className="py-3 px-3">Item</th>
@@ -2233,11 +2237,11 @@ Dá para pôr pela ficha dele.`);
                       return (
                         <tr key={p.id} className={`transition-colors ${isBaixo ? 'bg-red-50/60 hover:bg-red-100/60' : 'hover:bg-amber-50/30'}`}>
                           <td className="py-3 px-3 font-medium text-amber-950">
-                            <div className="flex items-center space-x-2">
+                            <div className="flex flex-wrap items-center gap-1.5">
                               <span>{p.nome}</span>
                               {isBaixo && (
-                                <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
-                                  ⚠️ ESTOQUE BAIXO (&lt;10)
+                                <span className="bg-red-600 text-white text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                                  ⚠️ BAIXO
                                 </span>
                               )}
                             </div>
