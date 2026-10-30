@@ -147,6 +147,18 @@ const CATEGORIAS = [
 function Dashboard() {
   // O que esta pessoa pode ver: o banco impõe as mesmas regras.
   const pode = usarPode();
+
+  // Cada papel enxerga um conjunto de abas. Quem não pode, nem vê.
+  // Fica aqui no alto porque a volta ao lugar onde a pessoa parou
+  // precisa saber quais abas valem antes de qualquer outra coisa.
+  const abasVisiveis = (
+    [
+      { id: 'agenda', icone: '🔔', rotulo: 'Agenda', minimo: 'atendimento' },
+      { id: 'pacientes', icone: '👤', rotulo: 'Pacientes', minimo: 'atendimento' },
+      { id: 'financeiro', icone: '💰', rotulo: 'Financeiro', minimo: 'total' },
+      { id: 'estoque', icone: '📦', rotulo: 'Estoque', minimo: 'estoque' },
+    ] as const
+  ).filter((a) => pode(a.minimo));
   const [mainTab, setMainTab] = useState<'estoque' | 'pacientes' | 'agenda' | 'financeiro'>('agenda');
   const [proximoAgendamento, setProximoAgendamento] = useState<string | null>(null);
   const [pilhaVistas, setPilhaVistas] = useState<Vista[]>([]);
@@ -965,22 +977,36 @@ Dá para pôr pela ficha dele.`);
 
   const ONDE_PAREI = 'onde-parei';
 
-  useEffect(() => {
-    salvarRascunho(ONDE_PAREI, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null });
-  }, [mainTab, selectedPaciente?.id]);
+  /* A ordem aqui importa e já me enganou uma vez: a tela nasce na Agenda
+     sem paciente, e se a gravação rodar nesse primeiro instante ela apaga
+     o lugar guardado antes de alguém conseguir lê-lo. Por isso só gravamos
+     depois que a tentativa de voltar aconteceu.                        */
+  const podeGuardar = useRef(false);
+  const pacienteEsperando = useRef<string | null>(null);
 
-  // Só depois que a lista de pacientes chega é que dá para reabrir a ficha.
-  const jaVoltou = useRef(false);
+  // Primeiro a aba, assim que soubermos o que esta pessoa pode ver.
   useEffect(() => {
-    if (jaVoltou.current || pacientes.length === 0) return;
-    jaVoltou.current = true;
+    if (podeGuardar.current || abasVisiveis.length === 0) return;
+    podeGuardar.current = true;
     const onde = lerRascunho<Vista>(ONDE_PAREI);
     if (!onde) return;
     // A aba precisa continuar permitida: o papel pode ter mudado.
-    const permitida = abasVisiveis.some((a) => a.id === onde.tab);
-    if (!permitida) return;
-    aplicarVista(onde);
+    if (abasVisiveis.some((a) => a.id === onde.tab)) setMainTab(onde.tab);
+    pacienteEsperando.current = onde.pacienteId;
+  }, [abasVisiveis.length]);
+
+  // A ficha, quando a lista de pacientes chegar.
+  useEffect(() => {
+    const id = pacienteEsperando.current;
+    if (!id || pacientes.length === 0) return;
+    pacienteEsperando.current = null;
+    if (pacientes.some((x) => x.id === id)) aplicarVista({ tab: 'pacientes', pacienteId: id });
   }, [pacientes.length]);
+
+  useEffect(() => {
+    if (!podeGuardar.current) return;
+    salvarRascunho(ONDE_PAREI, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null });
+  }, [mainTab, selectedPaciente?.id]);
 
   function irPara(v: Vista) {
     setPilhaVistas((h) => [...h, { tab: mainTab, pacienteId: selectedPaciente?.id ?? null }]);
@@ -1180,16 +1206,6 @@ Dá para pôr pela ficha dele.`);
     const matchNome = p.nome.toLowerCase().includes(searchPaciente.toLowerCase());
     return matchNome || matchCPF;
   });
-
-  // Cada papel enxerga um conjunto de abas. Quem não pode, nem vê.
-  const abasVisiveis = (
-    [
-      { id: 'agenda', icone: '🔔', rotulo: 'Agenda', minimo: 'atendimento' },
-      { id: 'pacientes', icone: '👤', rotulo: 'Pacientes', minimo: 'atendimento' },
-      { id: 'financeiro', icone: '💰', rotulo: 'Financeiro', minimo: 'total' },
-      { id: 'estoque', icone: '📦', rotulo: 'Estoque', minimo: 'estoque' },
-    ] as const
-  ).filter((a) => pode(a.minimo));
 
   if (!mounted) return null;
 
