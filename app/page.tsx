@@ -13,7 +13,7 @@ import Backup from './Backup';
 import { usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
-import { salvarRascunho, lerRascunho, limparRascunho, quandoFoiGuardado, useAvisoDeSaida } from '@/lib/rascunho';
+import { salvarRascunho, lerRascunho, limparRascunho, useRascunho } from '@/lib/rascunho';
 import { PESSOAS } from '@/lib/equipe';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
@@ -207,7 +207,6 @@ function Dashboard() {
   // Rascunho do cadastro novo: trocar de aba não pode apagar o que a
   // recepção já digitou. Edição de ficha existente não entra, porque lá
   // os dados já estão salvos no banco.
-  const [rascunhoGuardado, setRascunhoGuardado] = useState('');
   // Quem está aplicando hoje. Fica lembrado no aparelho porque a mesma
   // pessoa costuma aplicar vários seguidos — e errar isso vira pagamento
   // errado no fim do mês.
@@ -599,30 +598,17 @@ function Dashboard() {
   const temAlgoDigitado = Object.values(camposDoPaciente).some((v) => String(v ?? '').trim() !== '');
   const cadastrandoNovo = formPacienteAberto && !editingPacienteId;
 
-  useAvisoDeSaida(cadastrandoNovo && temAlgoDigitado);
+  // A mesma peça usada na marcação de consulta: guarda enquanto digita e,
+  // principalmente, na hora em que o app sai da frente no celular.
+  const rascunho = useRascunho(CHAVE_RASCUNHO, camposDoPaciente, cadastrandoNovo, temAlgoDigitado);
 
-  useEffect(() => {
-    if (!cadastrandoNovo) return;
-    if (!temAlgoDigitado) return;
-    const id = setTimeout(() => salvarRascunho(CHAVE_RASCUNHO, camposDoPaciente), 600);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cadastrandoNovo, temAlgoDigitado, JSON.stringify(camposDoPaciente)]);
-
-  /** Avisa que existe rascunho ao abrir o formulário vazio. */
   function abrirFormularioPaciente() {
-    const abrindo = !formPacienteAberto;
-    setFormPacienteAberto(abrindo);
-    if (abrindo && !editingPacienteId && !temAlgoDigitado) {
-      setRascunhoGuardado(lerRascunho(CHAVE_RASCUNHO) ? quandoFoiGuardado(CHAVE_RASCUNHO) : '');
-    } else {
-      setRascunhoGuardado('');
-    }
+    setFormPacienteAberto((a) => !a);
   }
 
   function recuperarRascunho() {
-    const r = lerRascunho<typeof camposDoPaciente>(CHAVE_RASCUNHO);
-    if (!r) return setRascunhoGuardado('');
+    const r = rascunho.recuperar();
+    if (!r) return;
     setNomePaciente(r.nomePaciente ?? '');
     setCpfPaciente(r.cpfPaciente ?? '');
     setTelPaciente(r.telPaciente ?? '');
@@ -637,17 +623,10 @@ function Dashboard() {
     setPrefMusica(r.prefMusica ?? '');
     setPrefBebida(r.prefBebida ?? '');
     setPrefComida(r.prefComida ?? '');
-    setRascunhoGuardado('');
-  }
-
-  function descartarRascunho() {
-    limparRascunho(CHAVE_RASCUNHO);
-    setRascunhoGuardado('');
   }
 
   function limpaFormularioPaciente() {
-    limparRascunho(CHAVE_RASCUNHO);
-    setRascunhoGuardado('');
+    rascunho.concluir();
     setFormPacienteAberto(false);
     setEditingPacienteId(null);
     setNomePaciente('');
@@ -1293,11 +1272,11 @@ function Dashboard() {
                   className={`space-y-3 px-5 pb-5 ${editingPacienteId || formPacienteAberto ? '' : 'hidden'}`}
                 >
                   {/* Cadastro interrompido: devolve o que já tinha sido digitado. */}
-                  {rascunhoGuardado && (
+                  {rascunho.disponivel && (
                     <div className="bg-blue-50 border border-blue-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <p className="text-xs text-blue-900">
                         Você tinha um cadastro em andamento{' '}
-                        <strong className="whitespace-nowrap">({rascunhoGuardado})</strong>.
+                        <strong className="whitespace-nowrap">({rascunho.disponivel})</strong>.
                       </p>
                       <div className="flex gap-1.5 flex-shrink-0">
                         <button
@@ -1309,7 +1288,7 @@ function Dashboard() {
                         </button>
                         <button
                           type="button"
-                          onClick={descartarRascunho}
+                          onClick={rascunho.descartar}
                           className="text-xs border border-blue-300 text-blue-900 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors"
                         >
                           Descartar

@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 /**
  * Rascunho de formulário, guardado no próprio aparelho.
  *
- * Existe porque trocar de aba no meio de um cadastro apagava tudo e a
- * equipe tinha que redigitar. O rascunho fica só neste computador, some
+ * Existe porque sair do app no meio de um cadastro apagava tudo e a
+ * equipe tinha que redigitar. O rascunho fica só neste aparelho, some
  * assim que o cadastro é salvo e vence sozinho em um dia — não é lugar
  * para guardar dado de paciente a longo prazo.
  *
@@ -68,11 +68,99 @@ export function quandoFoiGuardado(chave: string): string {
 }
 
 /**
- * Avisa antes de fechar a aba ou recarregar com cadastro pela metade.
+ * Guarda o que está sendo digitado e devolve quando a pessoa volta.
  *
- * Só funciona para sair do site; trocar de aba dentro do app é tratado
- * pelo rascunho, que devolve o que foi digitado.
+ * Três momentos salvam:
+ *  - enquanto digita, com uma pausa curta para não escrever a cada tecla;
+ *  - quando o app sai da frente (trocar de aplicativo no celular, bloquear
+ *    a tela, mudar de aba) — este é o que mais importa, porque no celular
+ *    o navegador descarta a página sem avisar e o beforeunload não chega;
+ *  - ao fechar a aba, junto com o aviso de "tem coisa não salva".
+ *
+ * @param chave        nome do rascunho, único por formulário
+ * @param valores      o que está digitado agora
+ * @param ativo        o formulário está aberto
+ * @param temConteudo  já foi digitado algo que valha a pena guardar
  */
+export function useRascunho<T>(
+  chave: string,
+  valores: T,
+  ativo: boolean,
+  temConteudo: boolean
+) {
+  const [disponivel, setDisponivel] = useState('');
+  // O valor mais recente, para salvar na saída sem reinstalar os ouvintes
+  // a cada tecla digitada.
+  const atual = useRef(valores);
+  useEffect(() => {
+    atual.current = valores;
+  });
+
+  // Formulário aberto e ainda vazio: oferece o que ficou da última vez.
+  useEffect(() => {
+    if (!ativo) {
+      setDisponivel('');
+      return;
+    }
+    if (temConteudo) return;
+    setDisponivel(lerRascunho(chave) ? quandoFoiGuardado(chave) : '');
+  }, [ativo, temConteudo, chave]);
+
+  // Enquanto digita.
+  const assinatura = JSON.stringify(valores);
+  useEffect(() => {
+    if (!ativo || !temConteudo) return;
+    const id = setTimeout(() => salvarRascunho(chave, atual.current), 500);
+    return () => clearTimeout(id);
+  }, [ativo, temConteudo, chave, assinatura]);
+
+  // Saindo do app, bloqueando a tela, trocando de aba.
+  useEffect(() => {
+    if (!ativo || !temConteudo) return;
+
+    const guardar = () => salvarRascunho(chave, atual.current);
+    const aoEsconder = () => {
+      if (document.visibilityState === 'hidden') guardar();
+    };
+    const aoFechar = (e: BeforeUnloadEvent) => {
+      guardar();
+      e.preventDefault();
+      e.returnValue = '';
+    };
+
+    document.addEventListener('visibilitychange', aoEsconder);
+    window.addEventListener('pagehide', guardar);
+    window.addEventListener('beforeunload', aoFechar);
+    return () => {
+      document.removeEventListener('visibilitychange', aoEsconder);
+      window.removeEventListener('pagehide', guardar);
+      window.removeEventListener('beforeunload', aoFechar);
+    };
+  }, [ativo, temConteudo, chave]);
+
+  return {
+    /** Texto de quando foi guardado, ou vazio se não há rascunho a oferecer. */
+    disponivel,
+    /** Devolve o que foi guardado, para o formulário preencher os campos. */
+    recuperar: () => {
+      const r = lerRascunho<T>(chave);
+      setDisponivel('');
+      return r;
+    },
+    /** A pessoa não quer o rascunho. */
+    descartar: () => {
+      limparRascunho(chave);
+      setDisponivel('');
+    },
+    /** Salvou de verdade: o rascunho não serve para mais nada. */
+    concluir: () => {
+      limparRascunho(chave);
+      setDisponivel('');
+    },
+  };
+}
+
+/** Mantido para quem já usa: avisa antes de fechar a aba. */
 export function useAvisoDeSaida(temCoisaNaoSalva: boolean) {
   useEffect(() => {
     if (!temCoisaNaoSalva) return;

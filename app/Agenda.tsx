@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
+import { useRascunho } from '@/lib/rascunho';
 import ItensDoAtendimento, {
   descreverItem,
   type ItemAtendimento,
@@ -1584,6 +1585,42 @@ function FormNovoAgendamento({
   const [novoNome, setNovoNome] = useState('');
   const [novoTelefone, setNovoTelefone] = useState('');
 
+  /* ---------- Rascunho da marcação ----------
+     Sair do app no meio de uma marcação apagava tudo. Agora o que foi
+     escolhido volta quando a pessoa reabre.                           */
+
+  const campos = {
+    pacienteId, busca, data, hora, horaFim, repetirDias, vezes,
+    tipo, profissional, obs, itens, novoNome, novoTelefone, modoNovo,
+  };
+
+  // Data e "4 vezes" já nascem preenchidos: não contam como coisa digitada.
+  const temConteudo =
+    pacienteId !== '' || novoNome.trim() !== '' || busca.trim() !== '' ||
+    hora !== '' || obs.trim() !== '' || itens.length > 0 ||
+    repetirDias > 0 || tipo !== 'retorno';
+
+  const rascunho = useRascunho('marcar-consulta', campos, true, temConteudo);
+
+  function recuperarMarcacao() {
+    const r = rascunho.recuperar();
+    if (!r) return;
+    setPacienteId(r.pacienteId ?? '');
+    setBusca(r.busca ?? '');
+    setData(r.data ?? hojeISO());
+    setHora(r.hora ?? '');
+    setHoraFim(r.horaFim ?? '');
+    setRepetirDias(r.repetirDias ?? 0);
+    setVezes(r.vezes ?? 4);
+    setTipo(r.tipo ?? 'retorno');
+    setProfissional(r.profissional ?? '');
+    setObs(r.obs ?? '');
+    setItens(r.itens ?? []);
+    setNovoNome(r.novoNome ?? '');
+    setNovoTelefone(r.novoTelefone ?? '');
+    setModoNovo(r.modoNovo ?? false);
+  }
+
   // Quando a pessoa clica num horário livre da grade, o formulário já vem pronto.
   useEffect(() => {
     if (dataInicial) setData(dataInicial);
@@ -1775,7 +1812,8 @@ function FormNovoAgendamento({
       }
     }
 
-    // Deu tudo certo: o cadastro guardado não serve para mais nada.
+    // Deu tudo certo: o cadastro e o rascunho não servem para mais nada.
+    rascunho.concluir();
     pacienteJaCriado.current = null;
     salvandoAgora.current = false;
     setSalvando(false);
@@ -1786,6 +1824,31 @@ function FormNovoAgendamento({
 
   return (
     <form onSubmit={salvar} className="px-6 pb-6 pt-2 space-y-3 border-t border-amber-100">
+      {/* Marcação interrompida: devolve o que já tinha sido escolhido. */}
+      {rascunho.disponivel && (
+        <div className="bg-blue-50 border border-blue-300 rounded-lg px-3 py-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <p className="text-xs text-blue-900">
+            Você tinha uma consulta sendo marcada{' '}
+            <strong className="whitespace-nowrap">({rascunho.disponivel})</strong>.
+          </p>
+          <div className="flex gap-1.5 flex-shrink-0">
+            <button
+              type="button"
+              onClick={recuperarMarcacao}
+              className="text-xs bg-blue-700 hover:bg-blue-800 text-white font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Recuperar
+            </button>
+            <button
+              type="button"
+              onClick={rascunho.descartar}
+              className="text-xs border border-blue-300 text-blue-900 hover:bg-blue-100 font-semibold px-3 py-1.5 rounded-lg transition-colors"
+            >
+              Descartar
+            </button>
+          </div>
+        </div>
+      )}
       {horaInicial && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Horário escolhido na grade: <strong>{dataCurta(data)} às {hora}</strong>{horaFim ? ` (até ${horaFim})` : ''}
