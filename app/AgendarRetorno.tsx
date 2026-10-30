@@ -381,7 +381,7 @@ export default function AgendarRetorno({
     setErro('');
     if (!validarOutros()) return;
     setSalvando(true);
-    const { data: sessao } = await supabase.auth.getUser();
+    const { data: sessao } = await supabase.auth.getSession();
 
     const datas = repetirDias > 0 ? datasDaSerie(data, repetirDias, vezes) : [data];
     const serie = datas.length > 1 ? crypto.randomUUID() : null;
@@ -397,7 +397,7 @@ export default function AgendarRetorno({
           profissional: profissional || null,
           observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
           serie_id: serie,
-          criado_por: sessao.user?.id ?? null,
+          criado_por: sessao.session?.user?.id ?? null,
         }))
       )
       .select('id');

@@ -46,10 +46,10 @@ export function linkFichaGeral() {
 /* Gera o convite e devolve o link único do paciente (vale 7 dias). */
 export async function criarConviteFicha(pacienteId: string) {
   const token = crypto.randomUUID().replace(/-/g, '') + crypto.randomUUID().replace(/-/g, '').slice(0, 8);
-  const { data: sessao } = await supabase.auth.getUser();
+  const { data: sessao } = await supabase.auth.getSession();
   const { error } = await supabase
     .from('convites_ficha')
-    .insert([{ token, paciente_id: pacienteId, criado_por: sessao.user?.id ?? null }]);
+    .insert([{ token, paciente_id: pacienteId, criado_por: sessao.session?.user?.id ?? null }]);
   if (error) return { ok: false as const, msg: error.message };
   return { ok: true as const, link: `${window.location.origin}/ficha?t=${token}` };
 }

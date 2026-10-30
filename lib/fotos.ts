@@ -59,14 +59,14 @@ export async function enviarFotoDoPaciente(
         .upload(caminho, menor, { contentType: menor.type });
       if (error) throw new Error(error.message);
 
-      const { data: sessao } = await supabase.auth.getUser();
+      const { data: sessao } = await supabase.auth.getSession();
       const { error: erroLinha } = await supabase.from('fotos_paciente').insert([
         {
           paciente_id: pacienteId,
           caminho,
           descricao: 'Primeira foto, no cadastro',
           momento: 'antes',
-          criado_por: sessao.user?.id ?? null,
+          criado_por: sessao.session?.user?.id ?? null,
         },
       ]);
       if (erroLinha) {

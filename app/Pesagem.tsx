@@ -80,9 +80,9 @@ export default function Pesagem({
     setErro('');
     setSalvando(true);
 
-    const { data: sessao } = await supabase.auth.getUser();
+    const { data: sessao } = await supabase.auth.getSession();
     const { error } = await supabase.from('pesagens').insert([
-      { paciente_id: pacienteId, peso: num, data, registrado_por: sessao.user?.id ?? null },
+      { paciente_id: pacienteId, peso: num, data, registrado_por: sessao.session?.user?.id ?? null },
     ]);
 
     if (!error) {

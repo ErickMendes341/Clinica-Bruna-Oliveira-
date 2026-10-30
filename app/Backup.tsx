@@ -95,8 +95,8 @@ export default function Backup({ compacto }: { compacto?: boolean }) {
 
       baixarArquivo(montarZip(arquivos, agora), `backup-clinica_${dataHoraArquivo(agora)}.zip`);
 
-      const { data: sessao } = await supabase.auth.getUser();
-      await supabase.from('exportacoes').insert([{ feito_por: sessao.user?.id ?? null, linhas: contagem }]);
+      const { data: sessao } = await supabase.auth.getSession();
+      await supabase.from('exportacoes').insert([{ feito_por: sessao.session?.user?.id ?? null, linhas: contagem }]);
       await carregarUltima();
 
       const total = Object.values(contagem).reduce((s, n) => s + n, 0);

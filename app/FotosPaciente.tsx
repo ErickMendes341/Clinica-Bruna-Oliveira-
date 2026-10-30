@@ -105,7 +105,7 @@ export default function FotosPaciente({
         .upload(caminho, menor, { contentType: menor.type, upsert: false });
       if (erroUp) throw new Error(erroUp.message);
 
-      const { data: sessao } = await supabase.auth.getUser();
+      const { data: sessao } = await supabase.auth.getSession();
       const { error: erroLinha } = await supabase.from('fotos_paciente').insert([
         {
           paciente_id: pacienteId,
@@ -113,7 +113,7 @@ export default function FotosPaciente({
           descricao: descricao.trim() || null,
           data,
           momento,
-          criado_por: sessao.user?.id ?? null,
+          criado_por: sessao.session?.user?.id ?? null,
         },
       ]);
       // Se a ficha não gravou, o arquivo não pode ficar perdido no balde.

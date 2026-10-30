@@ -94,8 +94,8 @@ export default function Despesas({
     if (editandoId) {
       ({ error } = await supabase.from('despesas').update(campos).eq('id', editandoId));
     } else {
-      const { data: sessao } = await supabase.auth.getUser();
-      ({ error } = await supabase.from('despesas').insert([{ ...campos, criado_por: sessao.user?.id ?? null }]));
+      const { data: sessao } = await supabase.auth.getSession();
+      ({ error } = await supabase.from('despesas').insert([{ ...campos, criado_por: sessao.session?.user?.id ?? null }]));
     }
     setSalvando(false);
     if (error) return setErro(`Não foi possível salvar: ${error.message}`);

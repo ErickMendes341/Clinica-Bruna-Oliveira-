@@ -1711,7 +1711,7 @@ function FormNovoAgendamento({
 
     salvandoAgora.current = true;
     setSalvando(true);
-    const { data: sessao } = await supabase.auth.getUser();
+    const { data: sessao } = await supabase.auth.getSession();
     let idParaAgendar = pacienteId;
 
     // Cadastro mínimo: nome e telefone. O resto da ficha se completa na consulta.
@@ -1780,7 +1780,7 @@ function FormNovoAgendamento({
           profissional: profissional || null,
           observacao: obs || null,
           serie_id: serie,
-          criado_por: sessao.user?.id ?? null,
+          criado_por: sessao.session?.user?.id ?? null,
         }))
       )
       .select('id');

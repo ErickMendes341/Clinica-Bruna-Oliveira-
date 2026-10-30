@@ -115,7 +115,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
             Fale com a administração.
           </p>
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => supabase.auth.signOut({ scope: 'local' })}
             className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
           >
             Sair
@@ -164,14 +164,23 @@ function TrancaPorInatividade() {
       }
     };
 
-    const eventos: (keyof DocumentEventMap)[] = ['mousedown', 'keydown', 'touchstart', 'scroll'];
+    // 'change' e 'input' entram porque quem preenche um agendamento usa
+    // quase só listas suspensas e seletor de data. No celular isso não
+    // dispara toque nem tecla, e a pessoa parecia parada enquanto
+    // trabalhava — a tranca caía no meio do preenchimento.
+    const eventos: (keyof DocumentEventMap)[] = [
+      'mousedown', 'keydown', 'touchstart', 'scroll', 'change', 'input', 'pointerdown',
+    ];
     eventos.forEach((e) => document.addEventListener(e, registrarUso, { passive: true }));
 
     const relogio = setInterval(() => {
       const parado = (Date.now() - ultimoUso) / 1000;
       const limite = MINUTOS_ATE_SAIR * 60;
       if (parado >= limite) {
-        supabase.auth.signOut();
+        // 'local' tranca só este aparelho. Sem isso, o Supabase encerra a
+        // sessão do usuário em TODOS os aparelhos — e um tablet esquecido
+        // ligado derrubava quem estava no meio de um agendamento.
+        supabase.auth.signOut({ scope: 'local' });
         return;
       }
       if (parado >= limite - SEGUNDOS_DE_AVISO) {
@@ -353,7 +362,7 @@ function BarraUsuario({ email, nome, papel }: { email: string; nome?: string; pa
             Alterar senha
           </button>
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => supabase.auth.signOut({ scope: 'local' })}
             className="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-amber-800/60 hover:bg-amber-800 transition-all"
           >
             Sair
@@ -587,7 +596,7 @@ function PrimeiroAcesso({ nome, onPronto }: { nome: string; onPronto: () => void
             Guarde bem: ninguém mais tem acesso a esta senha, nem a administração.
           </p>
           <button
-            onClick={() => supabase.auth.signOut()}
+            onClick={() => supabase.auth.signOut({ scope: 'local' })}
             className="text-[11px] font-semibold text-amber-800 hover:underline"
           >
             Sair

@@ -185,7 +185,7 @@ export default function Pagamentos({
     setSalvando(true);
 
     const grupo = editandoGrupo ?? crypto.randomUUID();
-    const { data: sessao } = await supabase.auth.getUser();
+    const { data: sessao } = await supabase.auth.getSession();
 
     // Ao alterar, troca as partes antigas pelas novas (o grupo continua o mesmo).
     if (editandoGrupo) {
@@ -205,7 +205,7 @@ export default function Pagamentos({
         forma: v.forma,
         descricao: descricao.trim() || null,
         data,
-        registrado_por: sessao.user?.id ?? null,
+        registrado_por: sessao.session?.user?.id ?? null,
       }))
     );
 
