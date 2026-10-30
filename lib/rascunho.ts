@@ -188,16 +188,24 @@ const LUGAR = 'clinica:lugar:';
 
 export function guardarLugar(chave: string, estado: unknown) {
   try {
-    localStorage.setItem(LUGAR + chave, JSON.stringify(estado));
+    localStorage.setItem(LUGAR + chave, JSON.stringify({ em: Date.now(), estado }));
   } catch {
     /* sem memória de lugar é melhor do que travar o app */
   }
 }
 
+/**
+ * O lugar só vale no mesmo dia. Sem isso, quem abria o app de manhã
+ * caía na agenda de ontem — com o título do dia visível, mas fácil de não
+ * reparar, e a recepção podia achar que não havia ninguém marcado.
+ */
 export function lerLugar<T>(chave: string): T | null {
   try {
     const bruto = localStorage.getItem(LUGAR + chave);
-    return bruto ? (JSON.parse(bruto) as T) : null;
+    if (!bruto) return null;
+    const { em, estado } = JSON.parse(bruto) as { em?: number; estado?: T };
+    if (!em || new Date(em).toDateString() !== new Date().toDateString()) return null;
+    return estado ?? null;
   } catch {
     return null;
   }
@@ -206,26 +214,38 @@ export function lerLugar<T>(chave: string): T | null {
 /**
  * Guarda o estado de uma tela e avisa na saída do app.
  *
- * @param chave   nome da tela
- * @param estado  o que precisa ser lembrado
- * @param pronto  false enquanto a tela ainda está montando: evita gravar
- *                o estado recém-nascido por cima do que foi guardado
+ * @param chave            nome da tela
+ * @param estado           o que precisa ser lembrado
+ * @param pronto           false enquanto a tela ainda está montando: evita
+ *                         gravar o estado recém-nascido por cima do guardado
+ * @param naHoraDeGuardar  o que só existe no instante de guardar, como a
+ *                         rolagem. Rolar a página não redesenha a tela, então
+ *                         ler a rolagem junto do resto gravava sempre a
+ *                         posição velha — o defeito que esta opção corrige.
  */
-export function useGuardarLugar(chave: string, estado: unknown, pronto = true) {
+export function useGuardarLugar(
+  chave: string,
+  estado: unknown,
+  pronto = true,
+  naHoraDeGuardar?: () => Record<string, unknown>
+) {
   const atual = useRef(estado);
+  const extra = useRef(naHoraDeGuardar);
   useEffect(() => {
     atual.current = estado;
+    extra.current = naHoraDeGuardar;
   });
 
   const assinatura = JSON.stringify(estado);
   useEffect(() => {
     if (!pronto) return;
-    guardarLugar(chave, atual.current);
+    guardarLugar(chave, { ...(atual.current as object), ...(extra.current?.() ?? {}) });
   }, [chave, pronto, assinatura]);
 
   useEffect(() => {
     if (!pronto) return;
-    const guardar = () => guardarLugar(chave, atual.current);
+    const guardar = () =>
+      guardarLugar(chave, { ...(atual.current as object), ...(extra.current?.() ?? {}) });
     const aoEsconder = () => {
       if (document.visibilityState === 'hidden') guardar();
     };

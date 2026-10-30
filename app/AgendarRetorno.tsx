@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
-import { useRascunho } from '@/lib/rascunho';
+import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import { avisarNoWhatsApp } from '@/lib/zap';
 import ItensDoAtendimento, {
   descreverItem,
@@ -224,7 +224,15 @@ export default function AgendarRetorno({
   const [carregando, setCarregando] = useState(true);
   const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
 
-  const [formAberto, setFormAberto] = useState(false);
+  // Volta aberto se a pessoa saiu do app no meio de uma marcação deste
+  // mesmo paciente. Uma chave só, com o id dentro: não deixa uma chave
+  // por paciente acumulando no aparelho.
+  const [formAberto, setFormAberto] = useState(() => {
+    const g = lerLugar<{ pacienteId: string; aberto: boolean }>('agendar-na-ficha');
+    return !!g && g.pacienteId === pacienteId && g.aberto;
+  });
+  useGuardarLugar('agendar-na-ficha', { pacienteId, aberto: formAberto });
+  const pacienteAnterior = useRef(pacienteId);
   const [remarcandoId, setRemarcandoId] = useState<string | null>(null);
 
   const [data, setData] = useState(hojeISO());
@@ -303,8 +311,14 @@ export default function AgendarRetorno({
 
   useEffect(() => {
     setCarregando(true);
-    setFormAberto(false);
-    setRemarcandoId(null);
+    // Trocou de paciente: o formulário do anterior não vale para este.
+    // Na primeira abertura não fecha — senão desfaria a volta ao lugar,
+    // que acabou de reabrir a marcação que estava pela metade.
+    if (pacienteAnterior.current !== pacienteId) {
+      setFormAberto(false);
+      setRemarcandoId(null);
+      pacienteAnterior.current = pacienteId;
+    }
     carregar();
   }, [carregar]);
 
@@ -358,7 +372,9 @@ export default function AgendarRetorno({
     setDescricaoOutros('');
     setItens([]);
     setErro('');
-    rascunho.concluir();
+    // O rascunho NÃO é apagado aqui: limpar() também roda ao abrir o
+    // formulário e ao voltar de uma remarcação, e apagar nesses momentos
+    // destruía o rascunho antes de a faixa "Recuperar" aparecer.
   }
 
   // "Outros" precisa dizer o que é; o texto vai para observacao e vira o
@@ -421,6 +437,8 @@ export default function AgendarRetorno({
       return;
     }
 
+    // Agendou de verdade: agora sim o rascunho não serve para mais nada.
+    rascunho.concluir();
     limpar();
     setFormAberto(false);
     await carregar();

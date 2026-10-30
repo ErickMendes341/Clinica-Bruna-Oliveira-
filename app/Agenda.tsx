@@ -313,13 +313,19 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
   const [carregando, setCarregando] = useState(true);
   const [limiteSumido, setLimiteSumido] = useState(30);
   const [mostrarTodosRetornos, setMostrarTodosRetornos] = useState(false);
-  const [novoAberto, setNovoAberto] = useState(false);
+
+  // Onde a pessoa estava, lido uma vez só ao abrir a agenda.
+  const [guardadoAgenda] = useState(() =>
+    lerLugar<{ dia: string; novoAberto?: boolean }>('agenda')
+  );
+  // Quem estava olhando a agenda de quinta não quer voltar na de hoje.
+  const [dia, setDia] = useState(() => guardadoAgenda?.dia ?? hojeISO());
+  // Marcação pela metade: o formulário reabre e oferece o rascunho.
+  const [novoAberto, setNovoAberto] = useState(() => !!guardadoAgenda?.novoAberto);
+  useGuardarLugar('agenda', { dia, novoAberto });
   const [preset, setPreset] = useState<{ data?: string; hora?: string }>({});
 
   // Visão de um dia específico
-  // Quem estava olhando a agenda de quinta não quer voltar na de hoje.
-  const [dia, setDia] = useState(() => lerLugar<{ dia: string }>('agenda')?.dia ?? hojeISO());
-  useGuardarLugar('agenda', { dia });
   const [agendaDia, setAgendaDia] = useState<Agendamento[]>([]);
   const [config, setConfig] = useState<Config>({ hora_inicio: '07:00', hora_fim: '19:00', passo_min: 5 });
   const [editandoConfig, setEditandoConfig] = useState(false);
@@ -1600,9 +1606,12 @@ function FormNovoAgendamento({
   };
 
   // Data e "4 vezes" já nascem preenchidos: não contam como coisa digitada.
+  // Data e hora que vieram do clique na grade também não contam: foram
+  // escolhidas pelo toque, não digitadas. Contar apagava o rascunho real.
+  const horaDigitada = hora !== '' && hora !== (horaInicial || '');
   const temConteudo =
     pacienteId !== '' || novoNome.trim() !== '' || busca.trim() !== '' ||
-    hora !== '' || obs.trim() !== '' || itens.length > 0 ||
+    horaDigitada || obs.trim() !== '' || itens.length > 0 ||
     repetirDias > 0 || tipo !== 'retorno';
 
   const rascunho = useRascunho('marcar-consulta', campos, true, temConteudo);

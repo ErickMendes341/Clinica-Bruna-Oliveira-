@@ -155,6 +155,9 @@ function TrancaPorInatividade() {
   useEffect(() => {
     let ultimoUso = Date.now();
     let avisando = false;
+    // O relógio bate a cada segundo; sem isto ele mandava "sair" de novo
+    // a cada batida até a tela sumir (dava para ver nos registros).
+    let trancou = false;
 
     const registrarUso = () => {
       ultimoUso = Date.now();
@@ -174,9 +177,11 @@ function TrancaPorInatividade() {
     eventos.forEach((e) => document.addEventListener(e, registrarUso, { passive: true }));
 
     const relogio = setInterval(() => {
+      if (trancou) return;
       const parado = (Date.now() - ultimoUso) / 1000;
       const limite = MINUTOS_ATE_SAIR * 60;
       if (parado >= limite) {
+        trancou = true;
         // 'local' tranca só este aparelho. Sem isso, o Supabase encerra a
         // sessão do usuário em TODOS os aparelhos — e um tablet esquecido
         // ligado derrubava quem estava no meio de um agendamento.

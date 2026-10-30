@@ -525,8 +525,8 @@ function Dashboard() {
     setValidade(r.validade ?? '');
   }
 
+  // Idem: roda também ao salvar a edição e ao arquivar um produto.
   function limpaFormularioProduto() {
-    rascunhoProduto.concluir();
     setEditingProductId(null);
     setNome('');
     setCategoria('medicacao');
@@ -587,6 +587,7 @@ function Dashboard() {
           const erro = await movimentarEstoque(data.id, inicial, `${nome} (Cadastro)`);
           if (erro) alert(`Produto cadastrado, mas a quantidade inicial não entrou: ${erro}`);
         }
+        rascunhoProduto.concluir();
         limpaFormularioProduto();
         fetchData();
       }
@@ -697,8 +698,9 @@ function Dashboard() {
     setPrefComida(r.prefComida ?? '');
   }
 
+  // Não apaga o rascunho: esta função também roda ao salvar a EDIÇÃO de
+  // uma ficha e ao arquivar, e isso destruía o cadastro novo em andamento.
   function limpaFormularioPaciente() {
-    rascunho.concluir();
     setFormPacienteAberto(false);
     setEditingPacienteId(null);
     setNomePaciente('');
@@ -848,6 +850,7 @@ Dá para pôr pela ficha dele.`);
             }
           }
           limparFotosNovas();
+          rascunho.concluir();
           limpaFormularioPaciente();
           fetchPacientes();
         }
@@ -907,17 +910,22 @@ Dá para pôr pela ficha dele.`);
      pagamento, item aplicado, pesagem ou consulta tem prontuário e
      registro financeiro — esse só pode ser arquivado.               */
   async function handleDeletePaciente(p: Paciente) {
-    const [pag, con, pes, ag] = await Promise.all([
+    // Fotos também são prontuário. Antes ficavam de fora desta conta: um
+    // paciente só com fotos podia ser excluído, e elas iam junto sem aviso.
+    const [pag, con, pes, ag, fot] = await Promise.all([
       supabase.from('pagamentos').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
       supabase.from('consumos_paciente').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
       supabase.from('pesagens').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
       supabase.from('agendamentos').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
+      supabase.from('fotos_paciente').select('id', { count: 'exact', head: true }).eq('paciente_id', p.id),
     ]);
     const partes = [
       pag.count ? `${pag.count} pagamento(s)` : '',
       con.count ? `${con.count} item(ns) aplicado(s)` : '',
       pes.count ? `${pes.count} pesagem(ns)` : '',
       ag.count ? `${ag.count} agendamento(s)` : '',
+      fot.count ? `${fot.count} foto(s) de evolução` : '',
+      p.foto_perfil ? 'foto de perfil' : '',
     ].filter(Boolean);
 
     if (partes.length > 0) {
@@ -991,6 +999,10 @@ Dá para pôr pela ficha dele.`);
 
   const ONDE_PAREI = 'tela-principal';
   const [voltouAoLugar, setVoltouAoLugar] = useState(false);
+  // Só começa a gravar quando a volta terminou de vez, ficha incluída.
+  // Gravar antes registrava "Pacientes, sem paciente" enquanto a lista
+  // ainda carregava — e, se ela falhasse, o paciente se perdia.
+  const [lugarCompleto, setLugarCompleto] = useState(false);
   const pacienteEsperando = useRef<string | null>(null);
   const rolagemEsperando = useRef<number | null>(null);
 
@@ -1008,9 +1020,12 @@ Dá para pôr pela ficha dele.`);
       estoqueAba: activeTab,
       estoqueBusca: searchTerm,
       buscaPaciente: searchPaciente,
-      rolagem: typeof window === 'undefined' ? 0 : window.scrollY,
+      // Cadastro de paciente aberto: reabre, e a faixa "Recuperar" aparece.
+      formPaciente: formPacienteAberto && !editingPacienteId,
     },
-    voltouAoLugar
+    lugarCompleto,
+    // Rolar não redesenha a tela: a posição tem que ser lida na hora.
+    () => ({ rolagem: window.scrollY })
   );
 
   // Primeiro a aba e as seções, assim que soubermos o que a pessoa pode ver.
@@ -1028,9 +1043,13 @@ Dá para pôr pela ficha dele.`);
       estoqueAba?: string;
       estoqueBusca?: string;
       buscaPaciente?: string;
+      formPaciente?: boolean;
       rolagem?: number;
     }>(ONDE_PAREI);
-    if (!onde) return;
+    if (!onde) {
+      setLugarCompleto(true);
+      return;
+    }
 
     // A aba precisa continuar permitida: o papel pode ter mudado.
     if (abasVisiveis.some((a) => a.id === onde.tab)) setMainTab(onde.tab);
@@ -1041,11 +1060,15 @@ Dá para pôr pela ficha dele.`);
     if (onde.estoqueAba) setActiveTab(onde.estoqueAba);
     if (onde.estoqueBusca) setSearchTerm(onde.estoqueBusca);
     if (onde.buscaPaciente) setSearchPaciente(onde.buscaPaciente);
+    if (onde.formPaciente) setFormPacienteAberto(true);
 
     pacienteEsperando.current = onde.pacienteId;
     rolagemEsperando.current = onde.rolagem ?? null;
-    // Sem ficha para reabrir, a rolagem pode voltar já.
-    if (!onde.pacienteId) devolverRolagem();
+    // Sem ficha para reabrir, a volta já acabou.
+    if (!onde.pacienteId) {
+      devolverRolagem();
+      setLugarCompleto(true);
+    }
   }, [abasVisiveis.length, voltouAoLugar]);
 
   // A ficha, quando a lista de pacientes chegar.
@@ -1054,9 +1077,13 @@ Dá para pôr pela ficha dele.`);
     if (!id || pacientes.length === 0) return;
     pacienteEsperando.current = null;
     if (pacientes.some((x) => x.id === id)) {
+      setPilhaVistas([{ tab: 'pacientes', pacienteId: null }]);
+      window.history.pushState({ app: true }, '');
       aplicarVista({ tab: 'pacientes', pacienteId: id }, true);
       devolverRolagem();
     }
+    // Achou ou não (o paciente pode ter sido arquivado), a volta acabou.
+    setLugarCompleto(true);
   }, [pacientes.length]);
 
   /** A altura só existe depois que o conteúdo desenha; daí as tentativas. */
@@ -1080,7 +1107,11 @@ Dá para pôr pela ficha dele.`);
   }
 
   function voltar() {
-    if (pilhaVistas.length === 0) return;
+    // Sem para onde voltar, "voltar" da ficha é ir para a lista.
+    if (pilhaVistas.length === 0) {
+      if (selectedPaciente) aplicarVista({ tab: mainTab, pacienteId: null });
+      return;
+    }
     // Dispara o popstate abaixo, que é quem de fato desempilha.
     window.history.back();
   }
@@ -1713,7 +1744,7 @@ Dá para pôr pela ficha dele.`);
                       onClick={voltar}
                       className="lg:hidden print:hidden mb-3 flex items-center gap-1.5 text-sm font-semibold text-amber-900 hover:text-amber-950"
                     >
-                      ← Voltar para a lista
+                      ← Voltar
                     </button>
 
                     {/* Foto e nome juntos, no alto à esquerda. */}

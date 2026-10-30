@@ -99,7 +99,9 @@ function baixarPlanilha(linhas: Linha[], nomeArquivo: string) {
 
 export default function Financeiro({ onAbrirPaciente }: { onAbrirPaciente?: (id: string) => void }) {
   // A visão escolhida volta junto: quem estava no resumo do mês continua lá.
-  const guardado = lerLugar<{ modo: 'dia' | 'mes' | 'geral'; lado: 'entradas' | 'saidas' | 'resumo' }>('financeiro');
+  const [guardado] = useState(() =>
+    lerLugar<{ modo: 'dia' | 'mes' | 'geral'; lado: 'entradas' | 'saidas' | 'resumo' }>('financeiro')
+  );
   const [modo, setModo] = useState<'dia' | 'mes' | 'geral'>(guardado?.modo ?? 'dia');
   const [mes, setMes] = useState(mesAtual());
   const [dia, setDia] = useState(hojeISO());
