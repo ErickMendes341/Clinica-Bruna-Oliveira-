@@ -105,8 +105,8 @@ on conflict (user_id) do update
 ```
 
 O `senha_trocada_em = now()` é o que dispensa a tela de trocar senha.
-Para mudar a senha depois (fim das férias, por exemplo), use
-**Authentication → Users → … → Reset password** no painel.
+Para mudar a senha depois (fim das férias, por exemplo), use o primeiro
+comando da seção "Pedir que alguém troque a senha de novo".
 
 ## Mudar o papel de alguém
 
@@ -145,14 +145,25 @@ O login compartilhado antigo (`clinicabrunaoliveira`) deve ser removido da
 
 ## Pedir que alguém troque a senha de novo
 
-Se uma senha vazou ou a pessoa esqueceu, redefina no painel
-(**Authentication → Users → … → Reset password**) e rode:
+Ninguém consegue ver uma senha: o banco guarda só uma versão embaralhada.
+Quem esqueceu recebe uma provisória nova.
+
+O "Reset password" do painel não serve aqui: ele manda um e-mail, e estes
+endereços são só identificadores. No **SQL Editor** do painel, troque a senha
+e o e-mail e execute:
 
 ```sql
+update auth.users
+   set encrypted_password = extensions.crypt('SENHA-PROVISORIA', extensions.gen_salt('bf', 10))
+ where email = 'nicole@clinicabrunaoliveira.com.br';
+
 update equipe_autorizada e
    set senha_trocada_em = null
   from auth.users u
  where u.id = e.user_id and u.email = 'nicole@clinicabrunaoliveira.com.br';
 ```
+
+Na Recepção, que é login de posto, rode só o primeiro comando: assim a senha
+continua sendo a da administração.
 
 Na próxima entrada, o app pede uma senha nova antes de liberar o acesso.
