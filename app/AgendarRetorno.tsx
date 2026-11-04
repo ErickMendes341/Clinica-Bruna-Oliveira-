@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
 import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
@@ -45,8 +44,6 @@ const TIPOS = [
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
 ];
-
-const PROFISSIONAIS = PESSOAS;
 
 /* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
 function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
@@ -228,7 +225,7 @@ export default function AgendarRetorno({
   // Volta aberto se a pessoa saiu do app no meio de uma marcação deste
   // mesmo paciente. Uma chave só, com o id dentro: não deixa uma chave
   // por paciente acumulando no aparelho.
-  const { nome: quemEnvia } = usarPapel();
+  const { assinatura: quemEnvia, pessoas } = usarPapel();
   const [formAberto, setFormAberto] = useState(() => {
     const g = lerLugar<{ pacienteId: string; aberto: boolean }>('agendar-na-ficha');
     return !!g && g.pacienteId === pacienteId && g.aberto;
@@ -654,7 +651,7 @@ export default function AgendarRetorno({
         className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
       >
         <option value="">Quem atende</option>
-        {PROFISSIONAIS.map((n) => (
+        {pessoas.map((n) => (
           <option key={n} value={n}>
             {n}
           </option>

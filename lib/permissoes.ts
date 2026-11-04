@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext } from 'react';
+import { PESSOAS } from './equipe';
 
 /**
  * O que cada pessoa da equipe pode fazer.
@@ -30,9 +31,18 @@ export function papelPode(papel: Papel | null, minimo: Papel) {
   return NIVEL[papel] >= NIVEL[minimo];
 }
 
-export const PapelContexto = createContext<{ papel: Papel | null; nome: string }>({
+export const PapelContexto = createContext<{
+  papel: Papel | null;
+  nome: string;
+  /** O nome que vai nas mensagens. Vazio em login de posto. */
+  assinatura: string;
+  /** Quem aparece em "quem atende" e "quem aplicou". */
+  pessoas: readonly string[];
+}>({
   papel: null,
   nome: '',
+  assinatura: '',
+  pessoas: PESSOAS,
 });
 
 export function usarPapel() {

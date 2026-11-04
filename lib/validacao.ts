@@ -102,3 +102,23 @@ export function mesmoCPF<T extends { id: string; nome: string; cpf?: string | nu
   if (alvo.length !== 11) return [];
   return lista.filter((p) => p.id !== ignorarId && soDigitos(p.cpf ?? '') === alvo);
 }
+
+/**
+ * A mesma regra nas três telas que criam senha. Conferir aqui evita que o
+ * sistema recuse depois de a pessoa já ter preenchido tudo.
+ */
+export const SENHA_MINIMA = 10;
+
+/** Para quando o sistema recusa a senha mesmo ela passando na regra daqui. */
+export const SENHA_FRACA = `Senha fraca. Use pelo menos ${SENHA_MINIMA} caracteres, misturando letras maiúsculas, minúsculas e números.`;
+
+/** O que há de errado com a senha, em texto para a tela. Vazio se ela serve. */
+export function problemaNaSenha(senha: string) {
+  if (senha.length < SENHA_MINIMA) {
+    return `A senha precisa ter pelo menos ${SENHA_MINIMA} caracteres.`;
+  }
+  if (!/[a-zA-Z]/.test(senha) || !/[0-9]/.test(senha)) {
+    return 'Misture letras e números — assim fica bem mais difícil de adivinhar.';
+  }
+  return '';
+}

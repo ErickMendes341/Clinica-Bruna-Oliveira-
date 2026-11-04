@@ -14,7 +14,6 @@ import { usarPapel, usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { salvarRascunho, lerRascunho, limparRascunho, useRascunho, guardarLugar, lerLugar, useGuardarLugar } from '@/lib/rascunho';
-import { PESSOAS } from '@/lib/equipe';
 import { apresentacao, mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
@@ -148,7 +147,7 @@ function Dashboard() {
   // O que esta pessoa pode ver: o banco impõe as mesmas regras.
   const pode = usarPode();
   // Quem está logado: o nome vai na mensagem, porque o número é um só.
-  const { nome: quemEnvia } = usarPapel();
+  const { assinatura: quemEnvia, pessoas } = usarPapel();
 
   // Cada papel enxerga um conjunto de abas. Quem não pode, nem vê.
   // Fica aqui no alto porque a volta ao lugar onde a pessoa parou
@@ -1975,7 +1974,7 @@ Dá para pôr pela ficha dele.`);
                           }`}
                         >
                           <option value="">Escolha o nome…</option>
-                          {PESSOAS.map((n) => (
+                          {pessoas.map((n) => (
                             <option key={n} value={n}>{n}</option>
                           ))}
                         </select>

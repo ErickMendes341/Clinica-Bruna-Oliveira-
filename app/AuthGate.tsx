@@ -3,7 +3,11 @@
 import { useState, useEffect } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import { supabase } from '@/lib/supabase';
+import { PESSOAS, juntarPessoas } from '@/lib/equipe';
 import { PapelContexto, ROTULO_PAPEL, type Papel } from '@/lib/permissoes';
+import { SENHA_FRACA, SENHA_MINIMA, problemaNaSenha } from '@/lib/validacao';
+import CriarAcesso from './CriarAcesso';
+import PedidosDeAcesso from './PedidosDeAcesso';
 
 /**
  * O Supabase identifica cada acesso por e-mail. Para a equipe digitar só
@@ -29,6 +33,29 @@ function paraEmail(usuario: string) {
   return limpo.includes('@') ? limpo : limpo + DOMINIO_PADRAO;
 }
 
+/** Quem entrou e o que pode fazer. */
+type Equipe = {
+  /** De qual login são estes dados. Vazio até o banco responder. */
+  de: string;
+  papel: Papel | null;
+  nome: string;
+  assinatura: string;
+  pessoas: readonly string[];
+  trocouSenha: boolean;
+  /** O banco não respondeu: não dá para dizer que a pessoa não tem acesso. */
+  falhou: boolean;
+};
+
+const NINGUEM: Equipe = {
+  de: '',
+  papel: null,
+  nome: '',
+  assinatura: '',
+  pessoas: PESSOAS,
+  trocouSenha: true,
+  falhou: false,
+};
+
 /**
  * Portão de acesso da clínica.
  *
@@ -40,13 +67,8 @@ function paraEmail(usuario: string) {
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [carregando, setCarregando] = useState(true);
-  // Quem entrou e o que pode fazer. Enquanto não sabemos, nada aparece.
-  const [equipe, setEquipe] = useState<{ papel: Papel | null; nome: string; trocouSenha: boolean }>({
-    papel: null,
-    nome: '',
-    trocouSenha: true,
-  });
-  const [buscandoPapel, setBuscandoPapel] = useState(false);
+  // Enquanto não sabemos quem entrou, nada aparece.
+  const [equipe, setEquipe] = useState<Equipe>(NINGUEM);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
@@ -62,27 +84,53 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     return () => sub.subscription.unsubscribe();
   }, []);
 
+  // Depende do id, e não da sessão: toda vez que o app volta para a frente
+  // o Supabase entrega uma sessão nova da mesma pessoa. Dependendo da sessão,
+  // cada volta desmontava a tela inteira e recarregava tudo do zero.
+  const usuarioId = session?.user.id ?? '';
+
   useEffect(() => {
-    if (!session) {
-      setEquipe({ papel: null, nome: '', trocouSenha: true });
+    if (!usuarioId) {
+      setEquipe(NINGUEM);
       return;
     }
-    setBuscandoPapel(true);
-    supabase
-      .from('equipe_autorizada')
-      .select('nome,papel,senha_trocada_em')
-      .eq('user_id', session.user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        const r = data as { nome: string; papel: Papel; senha_trocada_em: string | null } | null;
+    let valendo = true;
+    Promise.all([
+      supabase
+        .from('equipe_autorizada')
+        .select('nome,papel,senha_trocada_em,posto')
+        .eq('user_id', usuarioId)
+        .maybeSingle(),
+      supabase.rpc('nomes_da_equipe'),
+    ])
+      .then(([{ data, error }, { data: nomes }]) => {
+        if (!valendo) return;
+        const r = data as {
+          nome: string;
+          papel: Papel;
+          senha_trocada_em: string | null;
+          posto: boolean;
+        } | null;
         setEquipe({
+          de: usuarioId,
           papel: r?.papel ?? null,
           nome: r?.nome ?? '',
+          // Login de posto é usado por várias pessoas: o app não sabe quem
+          // está ali, então não assina no nome de ninguém.
+          assinatura: r && !r.posto ? r.nome : '',
+          pessoas: juntarPessoas((nomes as string[] | null) ?? []),
           trocouSenha: r?.senha_trocada_em !== null && r?.senha_trocada_em !== undefined,
+          falhou: !!error,
         });
-        setBuscandoPapel(false);
+      })
+      // Sem isto, qualquer falha aqui deixava o "Carregando…" para sempre.
+      .catch(() => {
+        if (valendo) setEquipe({ ...NINGUEM, de: usuarioId, falhou: true });
       });
-  }, [session]);
+    return () => {
+      valendo = false;
+    };
+  }, [usuarioId]);
 
   if (carregando) {
     return (
@@ -94,7 +142,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   if (!session) return <TelaLogin />;
 
-  if (buscandoPapel) {
+  if (equipe.de !== usuarioId) {
     return (
       <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center">
         <p className="text-amber-900/60 text-sm font-semibold tracking-wide">Carregando…</p>
@@ -104,26 +152,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   // Entrou, mas ninguém liberou esse usuário: o banco também não devolve
   // nada, então avisamos em vez de mostrar uma tela vazia.
-  if (!equipe.papel) {
-    return (
-      <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
-        <div className="bg-white border border-amber-200 rounded-2xl shadow-sm p-7 max-w-sm text-center">
-          <p className="text-3xl mb-3">🔒</p>
-          <h2 className="text-lg font-serif font-bold text-amber-950 mb-2">Acesso ainda não liberado</h2>
-          <p className="text-sm text-amber-900/80 leading-relaxed mb-5">
-            Seu login existe, mas ninguém liberou o acesso ao sistema da clínica.
-            Fale com a administração.
-          </p>
-          <button
-            onClick={() => supabase.auth.signOut({ scope: 'local' })}
-            className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
-          >
-            Sair
-          </button>
-        </div>
-      </div>
-    );
-  }
+  if (!equipe.papel) return <AguardandoAutorizacao falhou={equipe.falhou} />;
 
   // Senha ainda é a provisória entregue pela administração: ninguém entra
   // no prontuário sem antes criar uma senha só sua.
@@ -140,8 +169,45 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     <PapelContexto.Provider value={equipe}>
       <BarraUsuario email={session.user.email ?? ''} nome={equipe.nome} papel={equipe.papel} />
       <TrancaPorInatividade />
+      <PedidosDeAcesso />
       {children}
     </PapelContexto.Provider>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Conta criada, esperando a Dra. Bruna                                */
+/* ------------------------------------------------------------------ */
+
+function AguardandoAutorizacao({ falhou }: { falhou: boolean }) {
+  return (
+    <div className="min-h-screen bg-[#FDFBF7] flex items-center justify-center p-4">
+      <div className="bg-white border border-amber-200 rounded-2xl shadow-sm p-7 max-w-sm text-center">
+        <p className="text-3xl mb-3">{falhou ? '⚠️' : '⏳'}</p>
+        <h2 className="text-lg font-serif font-bold text-amber-950 mb-2">
+          {falhou ? 'Não foi possível conferir seu acesso' : 'Aguardando autorização'}
+        </h2>
+        <p className="text-sm text-amber-900/80 leading-relaxed mb-5">
+          {falhou
+            ? 'Confira a internet e tente de novo.'
+            : 'Seu pedido está com a Dra. Bruna. Depois que ela autorizar, toque no botão abaixo. Se demorar, fale com ela.'}
+        </p>
+        <div className="flex flex-col gap-2">
+          <button
+            onClick={() => window.location.reload()}
+            className="text-sm font-semibold px-4 py-2.5 rounded-xl bg-amber-800 hover:bg-amber-900 text-white transition-colors"
+          >
+            Verificar de novo
+          </button>
+          <button
+            onClick={() => supabase.auth.signOut({ scope: 'local' })}
+            className="text-sm font-semibold px-4 py-2.5 rounded-xl border border-amber-200 text-amber-900 hover:bg-amber-50 transition-colors"
+          >
+            Sair
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -228,6 +294,7 @@ function TelaLogin() {
   const [senha, setSenha] = useState('');
   const [erro, setErro] = useState('');
   const [enviando, setEnviando] = useState(false);
+  const [criandoCadastro, setCriandoCadastro] = useState(false);
 
   async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
@@ -252,6 +319,8 @@ function TelaLogin() {
     }
     // Sucesso: o onAuthStateChange do AuthGate assume daqui.
   }
+
+  if (criandoCadastro) return <CriarAcesso onVoltar={() => setCriandoCadastro(false)} />;
 
   return (
     <div className="min-h-screen bg-[#FDFBF7] text-amber-950 font-sans flex items-center justify-center p-4">
@@ -282,7 +351,7 @@ function TelaLogin() {
                   htmlFor="usuario"
                   className="block text-xs font-semibold text-amber-900 mb-1.5"
                 >
-                  Usuário
+                  Usuário ou e-mail
                 </label>
                 <input
                   id="usuario"
@@ -295,7 +364,7 @@ function TelaLogin() {
                   value={usuario}
                   onChange={(e) => setUsuario(e.target.value)}
                   className="w-full px-4 py-2.5 text-sm bg-amber-50/50 border border-amber-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white transition-all"
-                  placeholder="clinicabrunaoliveira"
+                  placeholder="seu usuário ou e-mail"
                 />
               </div>
 
@@ -332,6 +401,14 @@ function TelaLogin() {
                 {enviando ? 'Entrando…' : 'Entrar'}
               </button>
             </form>
+
+            <button
+              type="button"
+              onClick={() => setCriandoCadastro(true)}
+              className="w-full mt-4 py-1 text-xs font-semibold text-amber-800 hover:text-amber-950 underline underline-offset-2 transition-colors"
+            >
+              Ainda não tem acesso? Criar cadastro
+            </button>
           </div>
         </div>
 
@@ -395,8 +472,9 @@ function ModalTrocarSenha({ onFechar }: { onFechar: () => void }) {
     e.preventDefault();
     setErro('');
 
-    if (nova.length < 8) {
-      setErro('A senha precisa ter pelo menos 8 caracteres.');
+    const problema = problemaNaSenha(nova);
+    if (problema) {
+      setErro(problema);
       return;
     }
     if (nova !== confirma) {
@@ -410,7 +488,11 @@ function ModalTrocarSenha({ onFechar }: { onFechar: () => void }) {
     setEnviando(false);
 
     if (error) {
-      setErro('Não foi possível alterar a senha. Tente de novo.');
+      setErro(
+        error.code === 'weak_password'
+          ? SENHA_FRACA
+          : 'Não foi possível alterar a senha. Tente de novo.'
+      );
       return;
     }
 
@@ -504,10 +586,8 @@ function PrimeiroAcesso({ nome, onPronto }: { nome: string; onPronto: () => void
     e.preventDefault();
     setErro('');
 
-    if (nova.length < 8) return setErro('A senha precisa ter pelo menos 8 caracteres.');
-    if (!/[a-zA-Z]/.test(nova) || !/[0-9]/.test(nova)) {
-      return setErro('Misture letras e números — assim fica bem mais difícil de adivinhar.');
-    }
+    const problema = problemaNaSenha(nova);
+    if (problema) return setErro(problema);
     if (nova !== confirma) return setErro('As duas senhas não são iguais.');
 
     setEnviando(true);
@@ -515,9 +595,11 @@ function PrimeiroAcesso({ nome, onPronto }: { nome: string; onPronto: () => void
     if (error) {
       setEnviando(false);
       return setErro(
-        error.message.includes('different from the old')
-          ? 'Escolha uma senha diferente da provisória.'
-          : 'Não foi possível criar a senha. Tente de novo.'
+        error.code === 'weak_password'
+          ? SENHA_FRACA
+          : error.message.includes('different from the old')
+            ? 'Escolha uma senha diferente da provisória.'
+            : 'Não foi possível criar a senha. Tente de novo.'
       );
     }
     const { error: erroMarca } = await supabase.rpc('marcar_senha_trocada');
@@ -561,7 +643,7 @@ function PrimeiroAcesso({ nome, onPronto }: { nome: string; onPronto: () => void
                 className="w-full px-4 py-2.5 text-sm bg-amber-50/50 border border-amber-200 rounded-xl outline-none focus:border-amber-500 focus:bg-white transition-all"
               />
               <p className="text-[11px] text-amber-900/60 mt-1">
-                Pelo menos 8 caracteres, com letras e números.
+                Pelo menos {SENHA_MINIMA} caracteres, com letras e números.
               </p>
             </div>
 

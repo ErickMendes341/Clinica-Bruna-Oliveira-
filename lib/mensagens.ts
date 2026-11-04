@@ -20,13 +20,9 @@
  * No WhatsApp, *texto* fica em negrito e _texto_ em itálico.
  */
 
-import { PESSOAS } from './equipe';
+import { semTitulo } from './equipe';
 
 const BEBIDAS_NA_PERGUNTA = 'água, café ou capuccino';
-
-function semTitulo(nome: string) {
-  return nome.startsWith('Dra. ') ? nome.slice(5) : nome;
-}
 
 function eADraBruna(remetente?: string | null) {
   return semTitulo((remetente ?? '').trim()) === 'Bruna';
@@ -38,18 +34,16 @@ function eADraBruna(remetente?: string | null) {
  * Todas usam o mesmo número, e o WhatsApp não mostra ao paciente qual
  * atendente enviou: o nome só chega se estiver escrito no texto.
  *
- * Só assina quando o login é de uma pessoa da equipe. Login de posto,
- * como a Recepção, é usado por várias pessoas e fica com o texto neutro:
- * o app não sabe quem está ali, e nome errado é pior do que nome nenhum.
+ * Sem nome, sai o texto neutro. É o caso do login de posto, como a
+ * Recepção: o AuthGate não manda nome nenhum, porque várias pessoas usam
+ * esse login e nome errado é pior do que nome nenhum.
  *
- * @param remetente o nome do login que está enviando
+ * @param remetente o nome de quem está enviando
  */
 export function apresentacao(remetente?: string | null) {
   const nome = (remetente ?? '').trim();
+  if (!nome) return 'aqui é da Clínica Dra. Bruna Oliveira';
   const pessoa = semTitulo(nome);
-  if (!(PESSOAS as readonly string[]).includes(pessoa)) {
-    return 'aqui é da Clínica Dra. Bruna Oliveira';
-  }
   if (pessoa === 'Bruna') return 'aqui é a Dra. Bruna Oliveira';
   return `aqui é ${pessoa === nome ? nome : `a ${nome}`}, da Clínica Dra. Bruna Oliveira`;
 }

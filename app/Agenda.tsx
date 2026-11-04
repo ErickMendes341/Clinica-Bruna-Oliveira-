@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
-import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete, mensagemPacienteSumido, quandoPorExtenso } from '@/lib/mensagens';
 import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
@@ -171,8 +170,6 @@ const TIPOS = [
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#FDF4FF' },
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
-
-const PROFISSIONAIS = PESSOAS;
 
 const LEGENDA = [
   { nome: 'Bruna', cor: '#1d4ed8' },
@@ -1424,7 +1421,7 @@ function LinhaAgendamento({
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
-  const { nome: quemEnvia } = usarPapel();
+  const { assinatura: quemEnvia } = usarPapel();
   const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora), quemEnvia);
 
   return (
@@ -1512,7 +1509,7 @@ function LinhaPaciente({
   tom?: 'alerta';
   onMudou?: () => void;
 }) {
-  const { nome: quemEnvia } = usarPapel();
+  const { assinatura: quemEnvia } = usarPapel();
   const msgChamar = mensagemPacienteSumido(primeiroNome(p.nome), quemEnvia);
 
   return (
@@ -1552,6 +1549,7 @@ function FormNovoAgendamento({
   horaInicial?: string;
   onPronto: (dataSalva: string) => void;
 }) {
+  const { pessoas } = usarPapel();
   const [pacienteId, setPacienteId] = useState('');
   const [busca, setBusca] = useState('');
   // Antes isto vinha com hoje + 30 dias, e agendamento ia parar no mês
@@ -2080,7 +2078,7 @@ function FormNovoAgendamento({
             className="w-full px-3 py-2 border border-amber-200 rounded-lg text-sm bg-white outline-none"
           >
             <option value="">Não definido</option>
-            {PROFISSIONAIS.map((n) => (
+            {pessoas.map((n) => (
               <option key={n} value={n}>
                 {n}
               </option>
