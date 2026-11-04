@@ -16,6 +16,8 @@ export interface PessoaAlerta {
   telefone?: string;
   /** Horários de amanhã, quando o aviso for de atendimento marcado. */
   horas?: string[];
+  /** O tipo de cada atendimento de amanhã. */
+  tipos?: string[];
 }
 
 const TONS = {

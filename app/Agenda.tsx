@@ -1422,7 +1422,7 @@ function LinhaAgendamento({
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
   const { assinatura: quemEnvia } = usarPapel();
-  const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora), quemEnvia);
+  const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora), quemEnvia, [ag.tipo]);
 
   return (
     <div

@@ -14,7 +14,7 @@ import { usarPapel, usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { salvarRascunho, lerRascunho, limparRascunho, useRascunho, guardarLugar, lerLugar, useGuardarLugar } from '@/lib/rascunho';
-import { apresentacao, mensagemDeLembrete } from '@/lib/mensagens';
+import { apresentacao, emLista, mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
 import FotosPaciente from './FotosPaciente';
@@ -277,7 +277,7 @@ function Dashboard() {
   // Quem tem atendimento marcado para amanhã (alimenta o alerta do topo).
   // Paciente -> horários de amanhã. Quem tem duas sessões no mesmo dia
   // precisa ver as duas no lembrete.
-  const [agendadosAmanha, setAgendadosAmanha] = useState<Map<string, string[]>>(new Map());
+  const [agendadosAmanha, setAgendadosAmanha] = useState<Map<string, { horas: string[]; tipos: string[] }>>(new Map());
 
   const [mounted, setMounted] = useState(false);
 
@@ -332,17 +332,18 @@ function Dashboard() {
     const amanha = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
     const { data, error } = await supabase
       .from('agendamentos')
-      .select('paciente_id,hora')
+      .select('paciente_id,hora,tipo')
       .eq('data', amanha)
       .in('status', ['agendado', 'confirmado'])
       .order('hora', { ascending: true });
     if (error) return console.error('Erro ao buscar agenda de amanhã:', error);
 
-    const porPaciente = new Map<string, string[]>();
-    for (const linha of (data ?? []) as { paciente_id: string; hora: string | null }[]) {
-      const horas = porPaciente.get(linha.paciente_id) ?? [];
-      if (linha.hora) horas.push(linha.hora.slice(0, 5));
-      porPaciente.set(linha.paciente_id, horas);
+    const porPaciente = new Map<string, { horas: string[]; tipos: string[] }>();
+    for (const linha of (data ?? []) as { paciente_id: string; hora: string | null; tipo: string }[]) {
+      const dia = porPaciente.get(linha.paciente_id) ?? { horas: [], tipos: [] };
+      if (linha.hora) dia.horas.push(linha.hora.slice(0, 5));
+      dia.tipos.push(linha.tipo);
+      porPaciente.set(linha.paciente_id, dia);
     }
     setAgendadosAmanha(porPaciente);
   }
@@ -1289,7 +1290,7 @@ Dá para pôr pela ficha dele.`);
   // Item 9: o lembrete de amanhã vem da agenda de verdade, não do campo antigo.
   const retornosAmanha = pacientes
     .filter((p) => agendadosAmanha.has(p.id))
-    .map((p) => ({ ...p, horas: agendadosAmanha.get(p.id) ?? [] }));
+    .map((p) => ({ ...p, ...agendadosAmanha.get(p.id) }));
 
   const arquivados = pacientes.filter((p) => p.arquivado_em);
 
@@ -1400,13 +1401,8 @@ Dá para pôr pela ficha dele.`);
             linkWhatsApp={getWhatsAppLink}
             mensagem={(p) => {
               const horas = p.horas ?? [];
-              const quando =
-                horas.length === 0
-                  ? 'amanhã'
-                  : horas.length === 1
-                  ? `amanhã às ${horas[0]}`
-                  : `amanhã às ${horas.slice(0, -1).join(', ')} e ${horas[horas.length - 1]}`;
-              return mensagemDeLembrete(primeiroNomeDe(p.nome), quando, quemEnvia);
+              const quando = horas.length === 0 ? 'amanhã' : `amanhã às ${emLista(horas)}`;
+              return mensagemDeLembrete(primeiroNomeDe(p.nome), quando, quemEnvia, p.tipos);
             }}
           />
         </div>

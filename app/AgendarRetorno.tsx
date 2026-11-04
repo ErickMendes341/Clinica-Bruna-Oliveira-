@@ -520,7 +520,7 @@ export default function AgendarRetorno({
   useEffect(() => setTelAtual(telefone ?? ''), [telefone]);
 
   async function avisar(ag: Ag) {
-    const msg = mensagemDeLembrete(primeiroNome(pacienteNome), quandoPorExtenso(ag.data, ag.hora), quemEnvia);
+    const msg = mensagemDeLembrete(primeiroNome(pacienteNome), quandoPorExtenso(ag.data, ag.hora), quemEnvia, [ag.tipo]);
     const tel = await avisarNoWhatsApp({ pacienteId, nome: pacienteNome ?? '', telefone: telAtual, mensagem: msg });
     if (tel && tel !== telAtual) {
       setTelAtual(tel);
