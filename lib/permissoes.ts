@@ -7,7 +7,8 @@ import { createContext, useContext } from 'react';
  *
  *  atendimento — Thalita, Ludimila: agenda, pacientes e aplicar item do
  *                estoque na ficha.
- *  estoque     — Nicole: o de atendimento, mais a aba Estoque Médico.
+ *  estoque     — Nicole, Melissa e o posto Recepção: o de atendimento,
+ *                mais a aba Estoque Médico.
  *  total       — Bruna, Jaqueline: tudo, inclusive financeiro, cópia de
  *                segurança e exclusões definitivas.
  *

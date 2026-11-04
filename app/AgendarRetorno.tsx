@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
 import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
+import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import { avisarNoWhatsApp } from '@/lib/zap';
 import ItensDoAtendimento, {
@@ -227,6 +228,7 @@ export default function AgendarRetorno({
   // Volta aberto se a pessoa saiu do app no meio de uma marcação deste
   // mesmo paciente. Uma chave só, com o id dentro: não deixa uma chave
   // por paciente acumulando no aparelho.
+  const { nome: quemEnvia } = usarPapel();
   const [formAberto, setFormAberto] = useState(() => {
     const g = lerLugar<{ pacienteId: string; aberto: boolean }>('agendar-na-ficha');
     return !!g && g.pacienteId === pacienteId && g.aberto;
@@ -521,7 +523,7 @@ export default function AgendarRetorno({
   useEffect(() => setTelAtual(telefone ?? ''), [telefone]);
 
   async function avisar(ag: Ag) {
-    const msg = mensagemDeLembrete(primeiroNome(pacienteNome), quandoPorExtenso(ag.data, ag.hora));
+    const msg = mensagemDeLembrete(primeiroNome(pacienteNome), quandoPorExtenso(ag.data, ag.hora), quemEnvia);
     const tel = await avisarNoWhatsApp({ pacienteId, nome: pacienteNome ?? '', telefone: telAtual, mensagem: msg });
     if (tel && tel !== telAtual) {
       setTelAtual(tel);

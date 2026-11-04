@@ -10,12 +10,12 @@ import Pagamentos from './Pagamentos';
 import Financeiro from './Financeiro';
 import CadastrosRecebidos, { criarConviteFicha } from './CadastrosRecebidos';
 import Backup from './Backup';
-import { usarPode } from '@/lib/permissoes';
+import { usarPapel, usarPode } from '@/lib/permissoes';
 import AlertaPacientes from './AlertaPacientes';
 import { cpfValido, formatarCPF, formatarTelefoneBR, telefoneValido, limparNome, nomesParecidos, mesmoTelefone, mesmoCPF } from '@/lib/validacao';
 import { salvarRascunho, lerRascunho, limparRascunho, useRascunho, guardarLugar, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import { PESSOAS } from '@/lib/equipe';
-import { mensagemDeLembrete } from '@/lib/mensagens';
+import { apresentacao, mensagemDeLembrete } from '@/lib/mensagens';
 import AplicacoesPorPessoa from './AplicacoesPorPessoa';
 import ResumoTratamento from './ResumoTratamento';
 import FotosPaciente from './FotosPaciente';
@@ -147,6 +147,8 @@ const CATEGORIAS = [
 function Dashboard() {
   // O que esta pessoa pode ver: o banco impõe as mesmas regras.
   const pode = usarPode();
+  // Quem está logado: o nome vai na mensagem, porque o número é um só.
+  const { nome: quemEnvia } = usarPapel();
 
   // Cada papel enxerga um conjunto de abas. Quem não pode, nem vê.
   // Fica aqui no alto porque a volta ao lugar onde a pessoa parou
@@ -866,7 +868,7 @@ Dá para pôr pela ficha dele.`);
   async function handleEnviarFicha(p: Paciente) {
     const r = await criarConviteFicha(p.id);
     if (!r.ok) return alert(`Não foi possível gerar o link: ${r.msg}`);
-    const msg = `Olá ${p.nome.trim().split(' ')[0]}, aqui é da clínica Dra. Bruna Oliveira. Para adiantar seu atendimento, preencha sua ficha neste link (leva 3 minutos): ${r.link}`;
+    const msg = `Olá ${p.nome.trim().split(' ')[0]}, ${apresentacao(quemEnvia)}. Para adiantar seu atendimento, preencha sua ficha neste link (leva 3 minutos): ${r.link}`;
     if (p.telefone) {
       window.open(getWhatsAppLink(p.telefone, msg), '_blank', 'noreferrer');
     } else {
@@ -1386,7 +1388,7 @@ Dá para pôr pela ficha dele.`);
             tom="amber"
             linkWhatsApp={getWhatsAppLink}
             mensagem={(p) =>
-              `Olá ${p.nome}, aqui é da clínica Dra. Bruna Oliveira! Desejamos um feliz aniversário, muita saúde e sucesso! 🎂\n\nE temos um presente: todos os aniversariantes do mês ganham uma sessão de BodyShape. Entre em contato para agendar a sua!`
+              `Olá ${p.nome}, ${apresentacao(quemEnvia)}! Desejamos um feliz aniversário, muita saúde e sucesso! 🎂\n\nE temos um presente: todos os aniversariantes do mês ganham uma sessão de BodyShape. Entre em contato para agendar a sua!`
             }
           />
 
@@ -1405,7 +1407,7 @@ Dá para pôr pela ficha dele.`);
                   : horas.length === 1
                   ? `amanhã às ${horas[0]}`
                   : `amanhã às ${horas.slice(0, -1).join(', ')} e ${horas[horas.length - 1]}`;
-              return mensagemDeLembrete(primeiroNomeDe(p.nome), quando);
+              return mensagemDeLembrete(primeiroNomeDe(p.nome), quando, quemEnvia);
             }}
           />
         </div>
@@ -1785,7 +1787,7 @@ Dá para pôr pela ficha dele.`);
                     <div className="flex items-center gap-2 mt-3 print:hidden">
                       {selectedPaciente.telefone && (
                         <a
-                          href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome} aqui é da clinica Bruna Oliveira.`)}
+                          href={getWhatsAppLink(selectedPaciente.telefone, `Olá ${selectedPaciente.nome}, ${apresentacao(quemEnvia)}.`)}
                           target="_blank"
                           rel="noreferrer"
                           title="Falar no WhatsApp"

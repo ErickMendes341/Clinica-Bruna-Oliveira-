@@ -8,7 +8,9 @@ app — e o banco impõe a mesma regra, então esconder na tela não é a
 |---|---|---|
 | Dra. Bruna | `total` | tudo: agenda, pacientes, estoque, financeiro, cópia de segurança, excluir |
 | Jaqueline | `total` | tudo |
-| Recepção | `estoque` | agenda, pacientes, aplicar item na ficha **e** administrar o Estoque |
+| Nicole | `estoque` | agenda, pacientes, aplicar item na ficha **e** administrar o Estoque |
+| Melissa | `estoque` | igual à Nicole |
+| Recepção | `estoque` | igual à Nicole; login de posto, sem nome de pessoa |
 | Thalita | `atendimento` | agenda, pacientes e aplicar item na ficha |
 | Ludimila | `atendimento` | agenda, pacientes e aplicar item na ficha |
 
@@ -29,6 +31,21 @@ Quem é `atendimento` não vê a aba Estoque nem a Financeiro. Consegue dar
 baixa de material pela ficha do paciente (botão "Prescrever / Aplicar
 item"), mas não cadastra produto, não dá entrada e não vê preço de custo
 no financeiro.
+
+## Nome nas mensagens de WhatsApp
+
+Todas usam o mesmo número, e o WhatsApp não mostra ao paciente qual
+atendente enviou. Por isso o app escreve no texto o nome de quem está logado:
+"Aqui é Nicole, da Clínica Dra. Bruna Oliveira".
+
+Só assina se o nome do login estiver na lista `PESSOAS` de `lib/equipe.ts`
+(o título "Dra." é aceito). Login de posto, como a Recepção, sai com o texto
+neutro "Aqui é da Clínica Dra. Bruna Oliveira". Ao criar login de pessoa
+nova, use no banco o mesmo nome da lista.
+
+O nome identifica quem está logado no app; o número é o do WhatsApp
+conectado naquele aparelho. Num celular pessoal, a mensagem sai pelo número
+pessoal.
 
 ## Criar o login de alguém
 

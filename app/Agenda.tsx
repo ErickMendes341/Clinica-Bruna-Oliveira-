@@ -3,7 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { PESSOAS } from '@/lib/equipe';
-import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
+import { mensagemDeLembrete, mensagemPacienteSumido, quandoPorExtenso } from '@/lib/mensagens';
+import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
 import ItensDoAtendimento, {
   descreverItem,
@@ -1423,7 +1424,8 @@ function LinhaAgendamento({
 }) {
   const nome = ag.pacientes?.nome || 'Paciente';
   const tel = ag.pacientes?.telefone;
-  const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora));
+  const { nome: quemEnvia } = usarPapel();
+  const msgConfirmar = mensagemDeLembrete(primeiroNome(nome), quandoPorExtenso(ag.data, ag.hora), quemEnvia);
 
   return (
     <div
@@ -1510,7 +1512,8 @@ function LinhaPaciente({
   tom?: 'alerta';
   onMudou?: () => void;
 }) {
-  const msgChamar = `Olá ${primeiroNome(p.nome)}, aqui é da Clínica Dra. Bruna Oliveira. Sentimos sua falta! Dra. Bruna gostaria de acompanhar sua evolução, vamos agendar uma consulta?`;
+  const { nome: quemEnvia } = usarPapel();
+  const msgChamar = mensagemPacienteSumido(primeiroNome(p.nome), quemEnvia);
 
   return (
     <div className="px-6 py-3 flex items-center justify-between gap-3 hover:bg-amber-50/40 transition-colors">
