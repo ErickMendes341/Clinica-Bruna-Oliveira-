@@ -30,9 +30,9 @@ const BEBIDAS_NA_PERGUNTA = 'água, café ou capuccino';
  * É separado dos nomes da agenda porque aqui o texto é para fora: "Consulta
  * nova" organiza a agenda, mas para o paciente é só uma consulta.
  *
- * "Outros" fica de fora de propósito: a equipe usa esse texto livre também
- * para recados internos, como "Chamar para repetir exames", e isso não pode
- * chegar ao paciente. Tipo que não estiver aqui simplesmente não aparece.
+ * "Outros" fica de fora de propósito: é texto livre, e já foi usado para
+ * recados internos como "Chamar para repetir exames", que não podem chegar ao
+ * paciente. Tipo que não estiver aqui simplesmente não aparece.
  */
 const PROCEDIMENTOS: Record<string, string> = {
   consulta_nova: 'Consulta',
@@ -42,6 +42,8 @@ const PROCEDIMENTOS: Record<string, string> = {
   medicacao: 'Medicação',
   intradermo: 'Intradermoterapia capilar',
   estetica: 'Estética',
+  massagem: 'Massagem',
+  limpeza_pele: 'Limpeza de pele',
   fisioterapia: 'Fisioterapia',
   ginecologia: 'Ginecologia e Obstetrícia',
   bodyshape: 'BodyShape',

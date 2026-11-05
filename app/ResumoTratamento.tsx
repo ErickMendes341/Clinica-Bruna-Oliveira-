@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '@/lib/supabase';
+import { RECADO } from '@/lib/agenda';
 
 interface Paciente {
   id: string;
@@ -23,6 +24,8 @@ const ROTULO_TIPO: Record<string, string> = {
   medicacao: 'Medicação',
   intradermo: 'Intradermoterapia capilar',
   estetica: 'Estética',
+  massagem: 'Massagem',
+  limpeza_pele: 'Limpeza de pele',
   fisioterapia: 'Fisioterapia',
   ginecologia: 'Ginecologia e Obstetrícia',
   bodyshape: 'BodyShape',
@@ -64,6 +67,7 @@ export default function ResumoTratamento({
       supabase.from('agendamentos').select('data,tipo,profissional,status')
         .eq('paciente_id', paciente.id)
         .in('status', ['compareceu', 'confirmado', 'agendado'])
+        .neq('tipo', RECADO)
         .order('data'),
       supabase.from('consumos_paciente').select('created_at,nome_produto,quantidade')
         .eq('paciente_id', paciente.id).order('created_at'),

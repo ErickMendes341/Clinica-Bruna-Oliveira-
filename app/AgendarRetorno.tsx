@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { ehRecado, tipoDigitado } from '@/lib/agenda';
 import { mensagemDeLembrete, quandoPorExtenso } from '@/lib/mensagens';
 import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
@@ -39,15 +40,19 @@ const TIPOS = [
   { id: 'medicacao', label: 'Medicação', profissional: '', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: '', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#4ade80' },
+  { id: 'massagem', label: 'Massagem', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
+  { id: 'limpeza_pele', label: 'Limpeza de pele', profissional: 'Nicole', cor: '#c2410c', fundo: '#fb923c' },
   { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
   { id: 'ginecologia', label: 'Ginecologia e Obstetrícia', profissional: 'Giullia', cor: '#0f766e', fundo: '#5eead4' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#e879f9' },
+  { id: 'recado', label: 'Recado interno', profissional: '', cor: '#475569', fundo: '#cbd5e1' },
+  // Fica por último: é o que aparece se chegar um tipo desconhecido.
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#d6d3d1' },
 ];
 
-/* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
+/* "Outros" e "Recado interno" mostram o que foi digitado na hora de marcar. */
 function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
-  if (ag.tipo === 'outros' && ag.observacao?.trim()) return ag.observacao.trim();
+  if (tipoDigitado(ag.tipo) && ag.observacao?.trim()) return ag.observacao.trim();
   return infoTipo(ag.tipo).label;
 }
 
@@ -376,11 +381,11 @@ export default function AgendarRetorno({
     // destruía o rascunho antes de a faixa "Recuperar" aparecer.
   }
 
-  // "Outros" precisa dizer o que é; o texto vai para observacao e vira o
-  // nome do atendimento na agenda.
+  // "Outros" e "Recado interno" precisam dizer o que são; o texto vai para
+  // observacao e vira o nome do atendimento na agenda.
   function validarOutros() {
-    if (tipo === 'outros' && !descricaoOutros.trim()) {
-      setErro('Escreva qual é o procedimento ou lembrete.');
+    if (tipoDigitado(tipo) && !descricaoOutros.trim()) {
+      setErro(ehRecado(tipo) ? 'Escreva o recado.' : 'Escreva qual é o procedimento.');
       return false;
     }
     if (hora && horaFim && paraMin(horaFim) <= paraMin(hora)) {
@@ -410,7 +415,7 @@ export default function AgendarRetorno({
           hora_fim: hora && horaFim ? horaFim : null,
           tipo,
           profissional: profissional || null,
-          observacao: tipo === 'outros' ? descricaoOutros.trim() : null,
+          observacao: tipoDigitado(tipo) ? descricaoOutros.trim() : null,
           serie_id: serie,
           criado_por: sessao.session?.user?.id ?? null,
         }))
@@ -456,8 +461,8 @@ export default function AgendarRetorno({
         hora_fim: hora && horaFim ? horaFim : null,
         tipo,
         profissional: profissional || null,
-        // Se virou "Outros", guarda a descrição; se deixou de ser, preserva a observação antiga.
-        observacao: tipo === 'outros' ? descricaoOutros.trim() : ag.tipo === 'outros' ? null : ag.observacao ?? null,
+        // Tipo digitado guarda a descrição; se deixou de ser, preserva a observação antiga.
+        observacao: tipoDigitado(tipo) ? descricaoOutros.trim() : tipoDigitado(ag.tipo) ? null : ag.observacao ?? null,
       })
       .eq('id', ag.id);
 
@@ -509,7 +514,7 @@ export default function AgendarRetorno({
     setHoraFim(ag.hora_fim ? ag.hora_fim.slice(0, 5) : '');
     setTipo(ag.tipo);
     setProfissional(ag.profissional || infoTipo(ag.tipo).profissional);
-    setDescricaoOutros(ag.tipo === 'outros' ? ag.observacao ?? '' : '');
+    setDescricaoOutros(tipoDigitado(ag.tipo) ? ag.observacao ?? '' : '');
     carregarItens(ag.id);
     setErro('');
   }
@@ -634,15 +639,20 @@ export default function AgendarRetorno({
         ))}
       </select>
 
-      {tipo === 'outros' && (
+      {tipoDigitado(tipo) && (
         <input
           type="text"
           value={descricaoOutros}
           onChange={(e) => setDescricaoOutros(e.target.value)}
-          placeholder="Qual procedimento ou lembrete? *"
+          placeholder={ehRecado(tipo) ? 'Qual é o recado? *' : 'Qual procedimento? *'}
           autoFocus
           className="w-full px-3 py-2 border border-amber-300 rounded-lg text-sm outline-none focus:border-amber-500"
         />
+      )}
+      {ehRecado(tipo) && (
+        <p className="text-[11px] text-amber-800/70">
+          Fica só para a equipe: não gera mensagem para o paciente.
+        </p>
       )}
 
       <select
@@ -723,13 +733,15 @@ export default function AgendarRetorno({
                   </div>
 
                   <div className="flex items-center gap-1.5 flex-wrap flex-shrink-0">
-                    <button
-                      onClick={() => avisar(ag)}
-                      title={telAtual ? 'Mandar lembrete no WhatsApp' : 'Sem telefone: vai pedir o número e salvar na ficha'}
-                      className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-                    >
-                      💬 Avisar{!telAtual ? ' (sem tel.)' : ''}
-                    </button>
+                    {!ehRecado(ag.tipo) && (
+                      <button
+                        onClick={() => avisar(ag)}
+                        title={telAtual ? 'Mandar lembrete no WhatsApp' : 'Sem telefone: vai pedir o número e salvar na ficha'}
+                        className="text-[11px] bg-emerald-700 hover:bg-emerald-800 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+                      >
+                        💬 Avisar{!telAtual ? ' (sem tel.)' : ''}
+                      </button>
+                    )}
                     <button
                       onClick={() => (remarcandoId === ag.id ? setRemarcandoId(null) : abrirRemarcacao(ag))}
                       className="text-[11px] bg-white/80 hover:bg-white text-amber-900 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"

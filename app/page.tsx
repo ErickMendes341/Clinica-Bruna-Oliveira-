@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { RECADO } from '@/lib/agenda';
 import AuthGate from './AuthGate';
 import Agenda from './Agenda';
 import Pesagem from './Pesagem';
@@ -335,6 +336,8 @@ function Dashboard() {
       .select('paciente_id,hora,tipo')
       .eq('data', amanha)
       .in('status', ['agendado', 'confirmado'])
+      // Recado é para a equipe: o paciente não tem nada marcado por causa dele.
+      .neq('tipo', RECADO)
       .order('hora', { ascending: true });
     if (error) return console.error('Erro ao buscar agenda de amanhã:', error);
 
@@ -1143,6 +1146,7 @@ Dá para pôr pela ficha dele.`);
       .select('data')
       .eq('paciente_id', pacienteId)
       .in('status', ['agendado', 'confirmado'])
+      .neq('tipo', RECADO)
       .gte('data', iso)
       .order('data', { ascending: true })
       .limit(1);

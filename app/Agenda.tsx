@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
+import { ehRecado, tipoDigitado } from '@/lib/agenda';
 import { mensagemDeLembrete, mensagemPacienteSumido, quandoPorExtenso } from '@/lib/mensagens';
 import { usarPapel } from '@/lib/permissoes';
 import { useRascunho, lerLugar, useGuardarLugar } from '@/lib/rascunho';
@@ -165,9 +166,13 @@ const TIPOS = [
   { id: 'medicacao', label: 'Medicação', profissional: '', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'intradermo', label: 'Intradermoterapia capilar', profissional: '', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'estetica', label: 'Estética', profissional: 'Ludimila', cor: '#15803d', fundo: '#F0FDF4' },
+  { id: 'massagem', label: 'Massagem', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
+  { id: 'limpeza_pele', label: 'Limpeza de pele', profissional: 'Nicole', cor: '#c2410c', fundo: '#FFF4ED' },
   { id: 'fisioterapia', label: 'Fisioterapia', profissional: 'Thalita', cor: '#a16207', fundo: '#FEFCE8' },
   { id: 'ginecologia', label: 'Ginecologia e Obstetrícia', profissional: 'Giullia', cor: '#0f766e', fundo: '#F0FDFA' },
   { id: 'bodyshape', label: 'BodyShape', profissional: '', cor: '#a21caf', fundo: '#FDF4FF' },
+  { id: 'recado', label: 'Recado interno', profissional: '', cor: '#475569', fundo: '#F1F5F9' },
+  // Fica por último: é o que aparece se chegar um tipo desconhecido.
   { id: 'outros', label: 'Outros', profissional: '', cor: '#78716c', fundo: '#FAFAF9' },
 ];
 
@@ -179,15 +184,16 @@ const LEGENDA = [
   { nome: 'Thalita', cor: '#a16207' },
   { nome: 'Dra. Giullia', cor: '#0f766e' },
   { nome: 'BodyShape', cor: '#a21caf' },
+  { nome: 'Recado interno', cor: '#475569' },
 ];
 
 function infoTipo(id: string) {
   return TIPOS.find((t) => t.id === id) ?? TIPOS[TIPOS.length - 1];
 }
 
-/* "Outros" mostra o que foi digitado na hora de marcar, não a palavra "Outros". */
+/* "Outros" e "Recado interno" mostram o que foi digitado na hora de marcar. */
 function rotuloDe(ag: { tipo: string; observacao?: string | null }) {
-  if (ag.tipo === 'outros' && ag.observacao?.trim()) return ag.observacao.trim();
+  if (tipoDigitado(ag.tipo) && ag.observacao?.trim()) return ag.observacao.trim();
   return infoTipo(ag.tipo).label;
 }
 
@@ -445,8 +451,8 @@ export default function Agenda({ onAbrirPaciente }: { onAbrirPaciente?: (id: str
     <div className="space-y-6">
       {/* ---------------- Resumo ---------------- */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Tile numero={deHoje.length} rotulo="agendados hoje" destaque />
-        <Tile numero={proximos.length} rotulo="nos próximos 7 dias" />
+        <Tile numero={deHoje.filter((a) => !ehRecado(a.tipo)).length} rotulo="agendados hoje" destaque />
+        <Tile numero={proximos.filter((a) => !ehRecado(a.tipo)).length} rotulo="nos próximos 7 dias" />
         <Tile numero={retornosAMarcar.length} rotulo="sem retorno marcado" />
         <Tile numero={sumidos.length} rotulo={`sem vir há ${limiteSumido}+ dias`} alerta={sumidos.length > 0} />
       </div>
@@ -742,7 +748,7 @@ function DetalheAgendamento({
               </ul>
             </div>
           )}
-          {ag.observacao && ag.tipo !== 'outros' && (
+          {ag.observacao && !tipoDigitado(ag.tipo) && (
             <p className="text-xs text-amber-900 mt-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               {ag.observacao}
             </p>
@@ -931,6 +937,7 @@ function DiaDaAgenda({
 
   const porHora = new Map<number, Agendamento[]>();
   const semHorario: Agendamento[] = [];
+  const atendimentosDoDia = agendaDia.filter((a) => !ehRecado(a.tipo)).length;
   for (const a of agendaDia) {
     if (!a.hora) {
       semHorario.push(a);
@@ -966,7 +973,7 @@ function DiaDaAgenda({
             {porExtenso(dia)}
             <span className="normal-case">
               {' '}
-              • {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'}
+              • {atendimentosDoDia} agendamento{atendimentosDoDia === 1 ? '' : 's'}
             </span>
           </p>
         </div>
@@ -1018,7 +1025,7 @@ function DiaDaAgenda({
             )}
 
             <p className="text-xs text-amber-800/70 mt-3">
-              {agendaDia.length} agendamento{agendaDia.length === 1 ? '' : 's'} · {horasVazias} hora
+              {atendimentosDoDia} agendamento{atendimentosDoDia === 1 ? '' : 's'} · {horasVazias} hora
               {horasVazias === 1 ? '' : 's'} sem ninguém
             </p>
           </div>
@@ -1122,7 +1129,7 @@ function DiaDaAgenda({
                               className="text-[11px] font-semibold truncate"
                               style={{ color: veio ? '#15803d' : faltou ? '#b91c1c' : info(ag).cor }}
                             >
-                              {veio ? '✅ Compareceu' : faltou ? '❌ Não compareceu' : rotuloDe(ag)}
+                              {veio ? (ehRecado(ag.tipo) ? '✅ Feito' : '✅ Compareceu') : faltou ? '❌ Não compareceu' : rotuloDe(ag)}
                               {!veio && !faltou && ag.profissional ? ` · ${ag.profissional}` : ''}
                             </p>
                             {ag.agendamento_itens && ag.agendamento_itens.length > 0 && !veio && !faltou && (
@@ -1130,7 +1137,7 @@ function DiaDaAgenda({
                                 💊 {ag.agendamento_itens.map(descreverItem).join(' · ')}
                               </p>
                             )}
-                            {ag.observacao && ag.tipo !== 'outros' && !veio && !faltou && (
+                            {ag.observacao && !tipoDigitado(ag.tipo) && !veio && !faltou && (
                               <p className="text-[10px] truncate opacity-70">{ag.observacao}</p>
                             )}
 
@@ -1155,7 +1162,7 @@ function DiaDaAgenda({
                           <div className="flex flex-col justify-center gap-1 pr-2 py-2 flex-shrink-0">
                             <button
                               onClick={() => onStatus(ag.id, veio ? 'agendado' : 'compareceu')}
-                              title={veio ? 'Desmarcar presença' : 'Marcar que compareceu'}
+                              title={ehRecado(ag.tipo) ? (veio ? 'Desfazer' : 'Marcar como feito') : veio ? 'Desmarcar presença' : 'Marcar que compareceu'}
                               className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${
                                 veio
                                   ? 'bg-emerald-600 text-white'
@@ -1164,17 +1171,19 @@ function DiaDaAgenda({
                             >
                               ✓
                             </button>
-                            <button
-                              onClick={() => onStatus(ag.id, faltou ? 'agendado' : 'faltou')}
-                              title={faltou ? 'Desmarcar falta' : 'Marcar que não compareceu'}
-                              className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${
-                                faltou
-                                  ? 'bg-red-700 text-white'
-                                  : 'bg-white/80 text-red-700 border border-red-200 hover:bg-red-50'
-                              }`}
-                            >
-                              ✕
-                            </button>
+                            {!ehRecado(ag.tipo) && (
+                              <button
+                                onClick={() => onStatus(ag.id, faltou ? 'agendado' : 'faltou')}
+                                title={faltou ? 'Desmarcar falta' : 'Marcar que não compareceu'}
+                                className={`w-8 h-8 rounded-lg text-sm font-bold transition-colors ${
+                                  faltou
+                                    ? 'bg-red-700 text-white'
+                                    : 'bg-white/80 text-red-700 border border-red-200 hover:bg-red-50'
+                                }`}
+                              >
+                                ✕
+                              </button>
+                            )}
                           </div>
                         </div>
                       );})}
@@ -1471,19 +1480,31 @@ function LinhaAgendamento({
       </div>
 
       <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap">
-        <BotaoZap pacienteId={ag.paciente_id} nome={nome} telefone={tel} mensagem={msgConfirmar} rotulo="Confirmar" onTelefoneSalvo={onMudou} />
-        <button
-          onClick={() => onStatus(ag.id, 'compareceu')}
-          className="text-[11px] bg-amber-800 hover:bg-amber-900 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-        >
-          Compareceu
-        </button>
-        <button
-          onClick={() => onStatus(ag.id, 'faltou')}
-          className="text-[11px] border border-amber-200 text-amber-900 hover:bg-amber-100 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
-        >
-          Faltou
-        </button>
+        {/* Recado é para a equipe: não tem paciente a avisar nem presença a marcar. */}
+        {ehRecado(ag.tipo) ? (
+          <button
+            onClick={() => onStatus(ag.id, 'compareceu')}
+            className="text-[11px] bg-amber-800 hover:bg-amber-900 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+          >
+            Feito
+          </button>
+        ) : (
+          <>
+            <BotaoZap pacienteId={ag.paciente_id} nome={nome} telefone={tel} mensagem={msgConfirmar} rotulo="Confirmar" onTelefoneSalvo={onMudou} />
+            <button
+              onClick={() => onStatus(ag.id, 'compareceu')}
+              className="text-[11px] bg-amber-800 hover:bg-amber-900 text-white font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              Compareceu
+            </button>
+            <button
+              onClick={() => onStatus(ag.id, 'faltou')}
+              className="text-[11px] border border-amber-200 text-amber-900 hover:bg-amber-100 font-semibold px-2.5 py-1.5 rounded-lg transition-colors"
+            >
+              Faltou
+            </button>
+          </>
+        )}
         {onEditar && (
           <button
             onClick={() => onEditar(ag)}
@@ -1688,8 +1709,8 @@ function FormNovoAgendamento({
       setErro('Escolha o paciente ou cadastre um novo.');
       return;
     }
-    if (tipo === 'outros' && !obs.trim()) {
-      setErro('Escreva qual é o procedimento ou lembrete.');
+    if (tipoDigitado(tipo) && !obs.trim()) {
+      setErro(ehRecado(tipo) ? 'Escreva o recado.' : 'Escreva qual é o procedimento.');
       return;
     }
     if (hora && horaFim && paraMin(horaFim) <= paraMin(hora)) {
@@ -2091,17 +2112,30 @@ function FormNovoAgendamento({
 
       <div>
         <label className="block text-xs font-semibold text-amber-900 mb-1">
-          {tipo === 'outros'
-            ? 'Qual procedimento ou lembrete? *'
-            : 'Observação (opcional) — aparece na grade do dia'}
+          {ehRecado(tipo)
+            ? 'Qual é o recado? *'
+            : tipo === 'outros'
+              ? 'Qual procedimento? *'
+              : 'Observação (opcional) — aparece na grade do dia'}
         </label>
         <input
           type="text"
           value={obs}
           onChange={(e) => setObs(e.target.value)}
-          placeholder={tipo === 'outros' ? 'Ex: entrega de exames, avaliação postural' : 'Ex: primeira consulta, trazer exames'}
-          className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${tipo === 'outros' ? 'border-amber-300 focus:border-amber-500' : 'border-amber-200'}`}
+          placeholder={
+            ehRecado(tipo)
+              ? 'Ex: chamar para repetir exames'
+              : tipo === 'outros'
+                ? 'Ex: entrega de exames, avaliação postural'
+                : 'Ex: primeira consulta, trazer exames'
+          }
+          className={`w-full px-3 py-2 border rounded-lg text-sm outline-none ${tipoDigitado(tipo) ? 'border-amber-300 focus:border-amber-500' : 'border-amber-200'}`}
         />
+        {ehRecado(tipo) && (
+          <p className="text-[11px] text-amber-800/70 mt-1">
+            Fica só para a equipe: não gera mensagem para o paciente.
+          </p>
+        )}
       </div>
 
       {erro && <p className="text-xs text-red-700 font-semibold">{erro}</p>}
