@@ -15,11 +15,9 @@
  *    sem responder — e a resposta já serve de confirmação. Em 785
  *    agendamentos, o "Confirmado?" tinha produzido zero confirmações;
  *  - a bebida respondida preenche um campo que a clínica já usa, aquele
- *    "deixar pronto para o atendimento" da agenda do dia;
- *  - a última linha, discreta, dá caminho para quem NÃO pode vir. Sem
- *    ela, quem não vem simplesmente não responde e o horário se perde.
+ *    "deixar pronto para o atendimento" da agenda do dia.
  *
- * No WhatsApp, *texto* fica em negrito e _texto_ em itálico.
+ * No WhatsApp, *texto* fica em negrito.
  */
 
 import { semTitulo } from './equipe';
@@ -114,8 +112,7 @@ export function mensagemDeLembrete(
   return (
     `${saudacao} ${fala[0].toUpperCase()}${fala.slice(1)} 💛\n\n` +
     `Seu atendimento é *${quando}*.${linhaDoProcedimento(tipos)}\n\n` +
-    `Para já deixarmos tudo pronto: você prefere ${BEBIDAS_NA_PERGUNTA}?\n\n` +
-    `_Precisando remarcar, é só me avisar por aqui._`
+    `Para já deixarmos tudo pronto: você prefere ${BEBIDAS_NA_PERGUNTA}?`
   );
 }
 
