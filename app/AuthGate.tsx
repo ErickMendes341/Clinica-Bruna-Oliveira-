@@ -6,6 +6,7 @@ import { supabase } from '@/lib/supabase';
 import { PESSOAS, juntarPessoas } from '@/lib/equipe';
 import { PapelContexto, ROTULO_PAPEL, type Papel } from '@/lib/permissoes';
 import { SENHA_FRACA, SENHA_MINIMA, problemaNaSenha } from '@/lib/validacao';
+import ContasDoApp from './ContasDoApp';
 import CriarAcesso from './CriarAcesso';
 import PedidosDeAcesso from './PedidosDeAcesso';
 
@@ -42,6 +43,8 @@ type Equipe = {
   assinatura: string;
   pessoas: readonly string[];
   trocouSenha: boolean;
+  /** Autoriza acessos e cuida das contas (hoje, só a Dra. Bruna). */
+  aprova: boolean;
   /** O banco não respondeu: não dá para dizer que a pessoa não tem acesso. */
   falhou: boolean;
 };
@@ -53,6 +56,7 @@ const NINGUEM: Equipe = {
   assinatura: '',
   pessoas: PESSOAS,
   trocouSenha: true,
+  aprova: false,
   falhou: false,
 };
 
@@ -98,7 +102,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
     Promise.all([
       supabase
         .from('equipe_autorizada')
-        .select('nome,papel,senha_trocada_em,posto')
+        .select('nome,papel,senha_trocada_em,posto,aprova_acessos')
         .eq('user_id', usuarioId)
         .maybeSingle(),
       supabase.rpc('nomes_da_equipe'),
@@ -110,6 +114,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           papel: Papel;
           senha_trocada_em: string | null;
           posto: boolean;
+          aprova_acessos: boolean;
         } | null;
         setEquipe({
           de: usuarioId,
@@ -120,6 +125,8 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
           assinatura: r && !r.posto ? r.nome : '',
           pessoas: juntarPessoas((nomes as string[] | null) ?? []),
           trocouSenha: r?.senha_trocada_em !== null && r?.senha_trocada_em !== undefined,
+          // A tela só mostra o botão; quem confere de verdade é o banco.
+          aprova: r?.aprova_acessos === true,
           falhou: !!error,
         });
       })
@@ -167,7 +174,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
   return (
     <PapelContexto.Provider value={equipe}>
-      <BarraUsuario email={session.user.email ?? ''} nome={equipe.nome} papel={equipe.papel} />
+      <BarraUsuario
+        email={session.user.email ?? ''}
+        nome={equipe.nome}
+        papel={equipe.papel}
+        cuidaDasContas={equipe.aprova}
+      />
       <TrancaPorInatividade />
       <PedidosDeAcesso />
       {children}
@@ -426,8 +438,19 @@ function TelaLogin() {
 /* Barra de quem está logado                                           */
 /* ------------------------------------------------------------------ */
 
-function BarraUsuario({ email, nome, papel }: { email: string; nome?: string; papel?: Papel }) {
+function BarraUsuario({
+  email,
+  nome,
+  papel,
+  cuidaDasContas,
+}: {
+  email: string;
+  nome?: string;
+  papel?: Papel;
+  cuidaDasContas: boolean;
+}) {
   const [trocandoSenha, setTrocandoSenha] = useState(false);
+  const [vendoContas, setVendoContas] = useState(false);
 
   return (
     <>
@@ -437,6 +460,14 @@ function BarraUsuario({ email, nome, papel }: { email: string; nome?: string; pa
           {papel && <span className="font-normal text-amber-200/80"> · {ROTULO_PAPEL[papel]}</span>}
         </span>
         <div className="flex items-center gap-2 flex-shrink-0">
+          {cuidaDasContas && (
+            <button
+              onClick={() => setVendoContas(true)}
+              className="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-amber-800/60 hover:bg-amber-800 transition-all"
+            >
+              Contas
+            </button>
+          )}
           <button
             onClick={() => setTrocandoSenha(true)}
             className="text-[11px] font-semibold px-3 py-1.5 rounded-lg bg-amber-800/60 hover:bg-amber-800 transition-all"
@@ -453,6 +484,7 @@ function BarraUsuario({ email, nome, papel }: { email: string; nome?: string; pa
       </div>
 
       {trocandoSenha && <ModalTrocarSenha onFechar={() => setTrocandoSenha(false)} />}
+      {vendoContas && <ContasDoApp onFechar={() => setVendoContas(false)} />}
     </>
   );
 }

@@ -172,7 +172,19 @@ update equipe_autorizada e
  where u.id = e.user_id and u.email = 'jaqueline@clinicabrunaoliveira.com.br';
 ```
 
-## Tirar o acesso de alguém que saiu
+## Excluir a conta de quem não faz parte da clínica
+
+A Dra. Bruna faz isso pelo app: botão **Contas**, na barra do alto (só aparece
+para ela), e **Excluir** ao lado da pessoa. Serve para estranho que se
+cadastrou e para quem saiu da clínica.
+
+- A pessoa perde o acesso na hora e a conta é apagada de vez.
+- O que ela registrou continua no sistema (agendamentos, aplicações,
+  pesagens, pagamentos), só sem a ligação com a conta apagada.
+- Ninguém exclui a própria conta, nem a de quem autoriza acessos.
+- Se a pessoa voltar a trabalhar na clínica, ela faz um cadastro novo.
+
+## Tirar o acesso de alguém que saiu, sem apagar a conta
 
 ```sql
 delete from equipe_autorizada e
